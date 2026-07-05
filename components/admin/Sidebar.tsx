@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, ClipboardList, Bike, UtensilsCrossed, BarChart3, Users } from "lucide-react";
+import { LayoutGrid, ClipboardList, MessagesSquare, Bike, UtensilsCrossed, BarChart3, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutGrid, match: (p: string) => p === "/admin" },
   { href: "/admin/orders", label: "Commandes", icon: ClipboardList, match: (p: string) => p.startsWith("/admin/orders") },
+  { href: "/admin/conversations", label: "Conversations", icon: MessagesSquare, match: (p: string) => p.startsWith("/admin/conversations") },
   { href: "/admin/drivers", label: "Livreurs", icon: Bike, match: (p: string) => p.startsWith("/admin/drivers") },
   { href: "/admin/menu", label: "Gestion menu", icon: UtensilsCrossed, match: (p: string) => p.startsWith("/admin/menu") },
   { href: "/admin/reports", label: "Rapports", icon: BarChart3, match: (p: string) => p.startsWith("/admin/reports") },

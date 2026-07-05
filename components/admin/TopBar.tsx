@@ -7,6 +7,7 @@ const TITLES: { match: (p: string) => boolean; title: string; sub: string }[] = 
   { match: (p) => p === "/admin", title: "Dashboard", sub: "Aperçu du service" },
   { match: (p) => /^\/admin\/orders\/[^/]+$/.test(p), title: "Détail commande", sub: "Suivi et affectation" },
   { match: (p) => p.startsWith("/admin/orders"), title: "Commandes", sub: "Toutes les commandes" },
+  { match: (p) => p.startsWith("/admin/conversations"), title: "Conversations", sub: "WhatsApp — IA et prises en main manuelles" },
   { match: (p) => p.startsWith("/admin/drivers"), title: "Livreurs", sub: "Disponibilité et courses en temps réel" },
   { match: (p) => p.startsWith("/admin/menu"), title: "Gestion du menu", sub: "Activer, désactiver et tarifer les plats" },
   { match: (p) => p.startsWith("/admin/reports"), title: "Rapport financier", sub: "Revenus, coûts et marges" },

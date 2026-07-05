@@ -26,6 +26,7 @@ export interface Database {
           address_details: string | null;
           delivery_lat: number | null;
           delivery_lng: number | null;
+          ai_active: boolean;
           created_at: string;
           updated_at: string;
         },
