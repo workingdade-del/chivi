@@ -1,0 +1,53 @@
+/* ============================================================
+   CHIVI — Color tokens
+   Values transcribed verbatim from the source .fig.
+   A hot, appetite-first West-African street-food palette:
+   deep maroon grounds, molten gold shouts, chilli red accents.
+   ============================================================ */
+:root {
+  /* ---- Brand core: maroon family ---- */
+  --chivi-maroon: #7C0000;          /* rgb(124,0,0)  — primary background red */
+  --chivi-maroon-deep: #780003;     /* rgb(120,0,3)  — price numerals on gold */
+  --chivi-maroon-brick: #721919;    /* rgb(114,25,25)— ribbon, secondary text */
+  --chivi-maroon-ink: #680000;      /* rgb(104,0,0)  — hairline strokes */
+
+  /* ---- Brand core: gold / yellow family ---- */
+  --chivi-gold: #F6BC13;            /* rgb(246,188,19) — logotype + tagline gold */
+  --chivi-amber: #FFB600;           /* rgb(255,182,0)  — HARICOT, NEW flash */
+  --chivi-amber-bright: #FECB00;    /* rgb(254,203,0)  — bright fill */
+  --chivi-yellow: #F3EA00;          /* rgb(243,234,0)  — price banner yellow */
+  --chivi-sun: #FBC400;             /* poster field yellow (shrimp key art) */
+
+  /* ---- Accents ---- */
+  --chivi-chilli: #E73223;          /* rgb(231,50,35) — bissap red, NEW ribbon */
+  --chivi-cream: #FFE8A6;           /* rgb(255,232,166) — soft product name cream */
+
+  /* ---- Neutrals ---- */
+  --chivi-black: #0A0000;           /* rgb(10,0,0)   — torn label boxes */
+  --chivi-charcoal: #1A1A1A;        /* rgb(26,26,26) — near-black surfaces */
+  --chivi-ink: #1D1D1B;             /* rgb(29,29,27) — outline ink */
+  --chivi-white: #FFFFFF;
+  --chivi-off-white: #FDFDFD;       /* rgb(253,253,253) */
+
+  /* ============================================================
+     Semantic aliases — reach for these in components.
+     ============================================================ */
+  --surface-primary: var(--chivi-maroon);      /* default poster field */
+  --surface-sun: var(--chivi-sun);             /* alternate yellow field */
+  --surface-dark: var(--chivi-black);          /* torn label / footer */
+  --surface-card: var(--chivi-white);
+
+  --text-on-maroon: var(--chivi-gold);         /* gold headline on maroon */
+  --text-on-maroon-soft: var(--chivi-cream);   /* cream sub-copy on maroon */
+  --text-on-sun: var(--chivi-maroon);          /* maroon copy on yellow */
+  --text-on-dark: var(--chivi-gold);           /* gold on torn-black label */
+  --text-body: var(--chivi-white);
+  --text-price: var(--chivi-maroon-deep);      /* price numerals */
+
+  --accent-flash: var(--chivi-amber);          /* "NEW" / promo flash */
+  --accent-ribbon: var(--chivi-chilli);        /* ribbon / burst red */
+  --accent-hot: var(--chivi-chilli);
+
+  --stroke-hairline: var(--chivi-maroon-ink);
+  --stroke-ink: var(--chivi-ink);
+}

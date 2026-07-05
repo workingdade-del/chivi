@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="PWA Admin — Console" description="Console admin desktop CHIVI : dashboard du jour, liste + détail commandes, gestion livreurs, gestion menu, rapport financier, fiche client. FCFA, français." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+  @keyframes chiviPulseA { 0%,100%{opacity:1} 50%{opacity:.4} }
+</style>
+</helmet>
+
+<div style="min-height:100%;background:#efe7d8;display:flex;align-items:center;justify-content:center;padding:24px;font-family:'Space Grotesk',system-ui,sans-serif;box-sizing:border-box;">
+  <div style="width:1320px;height:868px;background:#F7F0E2;border-radius:22px;box-shadow:0 40px 100px -34px rgba(60,10,10,.55);overflow:hidden;display:flex;">
+
+    <!-- ============ SIDEBAR ============ -->
+    <div style="flex:none;width:236px;background:var(--chivi-maroon);display:flex;flex-direction:column;padding:22px 14px;box-sizing:border-box;">
+      <div style="display:flex;align-items:center;gap:10px;padding:0 8px 20px;">
+        <div style="width:120px;height:36px;background:url('../../assets/logo/chivi-wordmark-gold.png') left center/contain no-repeat;"></div>
+      </div>
+      <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,232,166,.5);padding:6px 12px 8px;">Console admin</div>
+
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="6">
+        <sc-if value="{{ n.active }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ n.go }}" style="display:flex;align-items:center;gap:12px;width:100%;padding:12px 12px;margin-bottom:3px;border:none;border-radius:12px;cursor:pointer;text-align:left;background:var(--chivi-amber);color:var(--chivi-maroon-deep);font-weight:700;font-size:14px;">
+            <span style="width:20px;display:flex;">{{ n.icon }}</span><span style="flex:1;">{{ n.label }}</span>
+            <sc-if value="{{ n.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="background:var(--chivi-maroon-deep);color:var(--chivi-gold);font-size:11px;font-weight:700;min-width:20px;height:20px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 5px;">{{ n.badge }}</span></sc-if>
+          </button>
+        </sc-if>
+        <sc-if value="{{ n.idle }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ n.go }}" style="display:flex;align-items:center;gap:12px;width:100%;padding:12px 12px;margin-bottom:3px;border:none;border-radius:12px;cursor:pointer;text-align:left;background:transparent;color:var(--chivi-cream);font-weight:600;font-size:14px;">
+            <span style="width:20px;display:flex;opacity:.85;">{{ n.icon }}</span><span style="flex:1;">{{ n.label }}</span>
+            <sc-if value="{{ n.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="background:var(--chivi-chilli);color:#fff;font-size:11px;font-weight:700;min-width:20px;height:20px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 5px;">{{ n.badge }}</span></sc-if>
+          </button>
+        </sc-if>
+      </sc-for>
+
+      <div style="margin-top:auto;background:rgba(0,0,0,.18);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:11px;">
+        <div style="width:38px;height:38px;flex:none;border-radius:50%;background:var(--chivi-amber);color:var(--chivi-maroon-deep);display:flex;align-items:center;justify-content:center;font-family:'Cy Grotesk','Arial Black';font-size:16px;">A</div>
+        <div style="min-width:0;">
+          <div style="color:#fff;font-weight:700;font-size:13px;">Ariane K.</div>
+          <div style="color:rgba(255,232,166,.6);font-size:11px;">Gérante · Fidjrossè</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ MAIN ============ -->
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+      <div style="flex:none;height:66px;border-bottom:1px solid #e6dcc6;display:flex;align-items:center;justify-content:space-between;padding:0 28px;">
+        <div>
+          <div style="font-family:'Redgar','Arial Black';font-size:20px;color:var(--chivi-maroon);text-transform:uppercase;letter-spacing:.02em;line-height:1;">{{ pageTitle }}</div>
+          <div style="font-size:12px;color:#9a8b78;margin-top:3px;">{{ pageSub }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e6dcc6;border-radius:999px;padding:8px 14px;color:#8a7f6e;font-size:13px;width:230px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+            Rechercher…
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;background:#e7f6ec;border-radius:999px;padding:8px 13px;color:#1b7a44;font-size:12.5px;font-weight:600;"><span style="width:8px;height:8px;border-radius:50%;background:#1b9c53;animation:chiviPulseA 1.6s infinite;"></span>Service ouvert</div>
+        </div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:26px 28px 34px;background:#F7F0E2;">
+
+        <!-- ===== DASHBOARD ===== -->
+        <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="Dashboard">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:18px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:12px;color:#9a8b78;letter-spacing:.03em;text-transform:uppercase;">Commandes</span>
+                <span style="width:30px;height:30px;border-radius:9px;background:rgba(255,182,0,.16);display:flex;align-items:center;justify-content:center;color:#a6740a;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg></span>
+              </div>
+              <div style="font-family:'Cy Grotesk','Arial Black';font-size:29px;color:var(--chivi-maroon-deep);margin-top:12px;line-height:1;">47</div>
+              <div style="font-size:12px;color:#1b7a44;margin-top:7px;font-weight:600;">+8 vs hier</div>
+            </div>
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:18px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:12px;color:#9a8b78;letter-spacing:.03em;text-transform:uppercase;">Revenus</span>
+                <span style="width:30px;height:30px;border-radius:9px;background:#e7f6ec;display:flex;align-items:center;justify-content:center;color:#1b7a44;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+              </div>
+              <div style="font-family:'Cy Grotesk','Arial Black';font-size:29px;color:var(--chivi-maroon-deep);margin-top:12px;line-height:1;">168 500</div>
+              <div style="font-size:12px;color:#1b7a44;margin-top:7px;font-weight:600;">FCFA · +12%</div>
+            </div>
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:18px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:12px;color:#9a8b78;letter-spacing:.03em;text-transform:uppercase;">Coûts</span>
+                <span style="width:30px;height:30px;border-radius:9px;background:rgba(231,50,35,.13);display:flex;align-items:center;justify-content:center;color:#c0392b;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg></span>
+              </div>
+              <div style="font-family:'Cy Grotesk','Arial Black';font-size:29px;color:var(--chivi-maroon-deep);margin-top:12px;line-height:1;">96 200</div>
+              <div style="font-size:12px;color:#9a8b78;margin-top:7px;font-weight:600;">FCFA · denrées+livr.</div>
+            </div>
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:18px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:12px;color:#9a8b78;letter-spacing:.03em;text-transform:uppercase;">Bénéfice</span>
+                <span style="width:30px;height:30px;border-radius:9px;background:#f4ead2;display:flex;align-items:center;justify-content:center;color:#a6740a;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg></span>
+              </div>
+              <div style="font-family:'Cy Grotesk','Arial Black';font-size:29px;color:var(--chivi-maroon-deep);margin-top:12px;line-height:1;">72 300</div>
+              <div style="font-size:12px;color:#1b7a44;margin-top:7px;font-weight:600;">FCFA · marge 43%</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-top:16px;">
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:20px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="font-weight:700;font-size:15px;color:var(--chivi-ink);">Revenus — 7 derniers jours</div>
+                <div style="font-family:'Cy Grotesk','Arial Black';font-size:15px;color:var(--chivi-maroon);">168 500 FCFA</div>
+              </div>
+              <div style="display:flex;align-items:flex-end;gap:14px;height:180px;margin-top:22px;padding-bottom:6px;border-bottom:1px solid #efe6d3;">
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%;"><div style="width:100%;max-width:34px;border-radius:8px 8px 0 0;background:#e8b94a;height:83px;"></div><span style="font-size:11px;color:#9a8b78;">Sam</span></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%;"><div style="width:100%;max-width:34px;border-radius:8px 8px 0 0;background:#e8b94a;height:108px;"></div><span style="font-size:11px;color:#9a8b78;">Dim</span></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%;"><div style="width:100%;max-width:34px;border-radius:8px 8px 0 0;background:#e8b94a;height:60px;"></div><span style="font-size:11px;color:#9a8b78;">Lun</span></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%;"><div style="width:100%;max-width:34px;border-radius:8px 8px 0 0;background:#e8b94a;height:90px;"></div><span style="font-size:11px;color:#9a8b78;">Mar</span></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%;"><div style="width:100%;max-width:34px;border-radius:8px 8px 0 0;background:#e8b94a;height:117px;"></div><span style="font-size:11px;color:#9a8b78;">Mer</span></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%;"><div style="width:100%;max-width:34px;border-radius:8px 8px 0 0;background:#e8b94a;height:99px;"></div><span style="font-size:11px;color:#9a8b78;">Jeu</span></div>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%;"><div style="width:100%;max-width:34px;border-radius:8px 8px 0 0;background:var(--chivi-amber);height:138px;"></div><span style="font-size:11px;color:#9a8b78;">Ven</span></div>
+              </div>
+            </div>
+
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:20px;">
+              <div style="font-weight:700;font-size:15px;color:var(--chivi-ink);">Commandes en cours</div>
+              <div style="margin-top:16px;display:flex;flex-direction:column;gap:13px;">
+                <div style="display:flex;align-items:center;gap:12px;"><span style="width:44px;font-family:'Cy Grotesk','Arial Black';font-size:22px;color:var(--chivi-amber);">3</span><div style="flex:1;"><div style="height:8px;border-radius:999px;background:#f0e7d4;overflow:hidden;"><div style="width:38%;height:100%;background:var(--chivi-amber);"></div></div><span style="font-size:12px;color:#8a7f6e;">Reçues</span></div></div>
+                <div style="display:flex;align-items:center;gap:12px;"><span style="width:44px;font-family:'Cy Grotesk','Arial Black';font-size:22px;color:var(--chivi-chilli);">4</span><div style="flex:1;"><div style="height:8px;border-radius:999px;background:#f0e7d4;overflow:hidden;"><div style="width:55%;height:100%;background:var(--chivi-chilli);"></div></div><span style="font-size:12px;color:#8a7f6e;">En préparation</span></div></div>
+                <div style="display:flex;align-items:center;gap:12px;"><span style="width:44px;font-family:'Cy Grotesk','Arial Black';font-size:22px;color:#1b9c53;">2</span><div style="flex:1;"><div style="height:8px;border-radius:999px;background:#f0e7d4;overflow:hidden;"><div style="width:26%;height:100%;background:#1b9c53;"></div></div><span style="font-size:12px;color:#8a7f6e;">En route</span></div></div>
+              </div>
+              <div style="height:1px;background:#efe6d3;margin:18px 0 14px;"></div>
+              <div style="font-weight:700;font-size:13px;color:var(--chivi-ink);margin-bottom:10px;">Top plats du jour</div>
+              <div style="display:flex;flex-direction:column;gap:9px;">
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:#6d6358;"><span>Poulet CHIVI braisé</span><b style="color:var(--chivi-maroon-deep);">18</b></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:#6d6358;"><span>Haricot au gari</span><b style="color:var(--chivi-maroon-deep);">14</b></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:#6d6358;"><span>Poisson braisé</span><b style="color:var(--chivi-maroon-deep);">9</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== ORDERS LIST ===== -->
+        <sc-if value="{{ isOrders }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Commandes">
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <sc-for list="{{ orderFilters }}" as="f" hint-placeholder-count="4">
+              <sc-if value="{{ f.active }}" hint-placeholder-val="{{ false }}"><button onClick="{{ f.select }}" style="padding:8px 15px;border-radius:999px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:var(--chivi-maroon);color:var(--chivi-gold);">{{ f.label }}</button></sc-if>
+              <sc-if value="{{ f.idle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ f.select }}" style="padding:8px 15px;border-radius:999px;border:1px solid #e2d6bd;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:#6d6358;">{{ f.label }}</button></sc-if>
+            </sc-for>
+          </div>
+          <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:130px 1.4fr 1fr 120px 1fr 40px;gap:12px;padding:13px 20px;background:#faf4e8;border-bottom:1px solid #efe6d3;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#9a8b78;font-weight:600;">
+              <span>Commande</span><span>Client</span><span>Statut</span><span>Montant</span><span>Livreur</span><span></span>
+            </div>
+            <sc-for list="{{ orders }}" as="o" hint-placeholder-count="6">
+              <div onClick="{{ o.open }}" style="display:grid;grid-template-columns:130px 1.4fr 1fr 120px 1fr 40px;gap:12px;padding:15px 20px;border-bottom:1px solid #f3ecdd;align-items:center;cursor:pointer;font-size:14px;">
+                <span style="font-family:'Cy Grotesk','Arial Black';color:var(--chivi-maroon-deep);">{{ o.number }}</span>
+                <span><b style="color:var(--chivi-ink);font-weight:600;">{{ o.client }}</b><br><span style="font-size:12px;color:#9a8b78;">{{ o.time }}</span></span>
+                <span>
+                  <sc-if value="{{ o.sNew }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;background:rgba(255,182,0,.16);color:#a6740a;">Reçue</span></sc-if>
+                  <sc-if value="{{ o.sPrep }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;background:rgba(231,50,35,.14);color:#c0392b;">En préparation</span></sc-if>
+                  <sc-if value="{{ o.sRoute }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;background:#e8f0fb;color:#2b5fb0;">En route</span></sc-if>
+                  <sc-if value="{{ o.sDone }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;background:#e7f6ec;color:#1b7a44;">Livrée</span></sc-if>
+                </span>
+                <span style="font-family:'Cy Grotesk','Arial Black';color:var(--chivi-ink);">{{ o.amount }}</span>
+                <span style="font-size:13px;color:#6d6358;">
+                  <sc-if value="{{ o.hasDriver }}" hint-placeholder-val="{{ true }}">{{ o.driver }}</sc-if>
+                  <sc-if value="{{ o.noDriver }}" hint-placeholder-val="{{ false }}"><span style="color:var(--chivi-chilli);font-weight:600;">À assigner</span></sc-if>
+                </span>
+                <span style="color:#c9bda6;text-align:right;">›</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== ORDER DETAIL ===== -->
+        <sc-if value="{{ isOrderDetail }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Détail commande">
+          <button onClick="{{ goOrders }}" style="display:inline-flex;align-items:center;gap:7px;background:none;border:none;color:var(--chivi-maroon);font-weight:600;font-size:13px;cursor:pointer;margin-bottom:16px;">‹ Retour aux commandes</button>
+          <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px;">
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:22px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <div style="font-family:'Cy Grotesk','Arial Black';font-size:30px;color:var(--chivi-maroon-deep);line-height:1;">{{ od.number }}</div>
+                  <div style="font-size:13px;color:#9a8b78;margin-top:6px;">{{ od.time }} · {{ od.payment }}</div>
+                </div>
+                <span style="font-size:13px;font-weight:700;padding:6px 13px;border-radius:999px;background:rgba(231,50,35,.14);color:#c0392b;">En préparation</span>
+              </div>
+              <div style="height:1px;background:#efe6d3;margin:20px 0;"></div>
+              <div style="display:flex;flex-direction:column;gap:14px;">
+                <sc-for list="{{ od.items }}" as="it" hint-placeholder-count="3">
+                  <div style="display:flex;gap:13px;align-items:flex-start;">
+                    <span style="font-family:'Cy Grotesk','Arial Black';font-size:19px;color:var(--chivi-amber);min-width:1.6em;">{{ it.qty }}×</span>
+                    <div style="flex:1;"><div style="font-weight:600;font-size:15px;color:var(--chivi-ink);">{{ it.name }}</div><div style="font-size:13px;color:#9a8b78;margin-top:2px;">{{ it.opts }}</div></div>
+                    <span style="font-family:'Cy Grotesk','Arial Black';font-size:15px;color:var(--chivi-maroon-deep);">{{ it.price }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="background:#fff6e5;border-left:3px solid var(--chivi-amber);border-radius:9px;padding:12px 14px;margin-top:18px;font-size:13.5px;color:#6d5a3c;line-height:1.4;"><b style="color:#a6740a;text-transform:uppercase;font-size:11px;letter-spacing:.04em;">Note client</b><br>Bien pimenté. Immeuble bleu, 2e étage.</div>
+              <div style="height:1px;background:#efe6d3;margin:18px 0;"></div>
+              <div style="display:flex;justify-content:space-between;font-size:14px;color:#6d6358;padding:3px 0;"><span>Sous-total</span><span>4 500 FCFA</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:14px;color:#6d6358;padding:3px 0;"><span>Livraison</span><span>500 FCFA</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 0;"><span style="font-weight:700;color:var(--chivi-ink);">Total</span><span style="font-family:'Cy Grotesk','Arial Black';font-size:22px;color:var(--chivi-maroon-deep);">5 000 FCFA</span></div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:20px;">
+                <div style="font-weight:700;font-size:14px;color:var(--chivi-ink);margin-bottom:14px;">Suivi</div>
+                <sc-for list="{{ od.track }}" as="t" hint-placeholder-count="4">
+                  <div style="display:flex;gap:12px;">
+                    <div style="display:flex;flex-direction:column;align-items:center;">
+                      <sc-if value="{{ t.done }}" hint-placeholder-val="{{ true }}"><div style="width:26px;height:26px;border-radius:50%;background:var(--chivi-amber);color:#780003;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">✓</div></sc-if>
+                      <sc-if value="{{ t.todo }}" hint-placeholder-val="{{ false }}"><div style="width:26px;height:26px;border-radius:50%;background:#f3ecdd;color:#b9ad9c;border:1px solid #e2d6bd;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">{{ t.n }}</div></sc-if>
+                      <sc-if value="{{ t.line }}" hint-placeholder-val="{{ true }}"><div style="width:2px;flex:1;min-height:16px;background:#efe6d3;"></div></sc-if>
+                    </div>
+                    <div style="padding-bottom:14px;">
+                      <sc-if value="{{ t.done }}" hint-placeholder-val="{{ true }}"><div style="font-weight:600;font-size:13.5px;color:var(--chivi-ink);">{{ t.label }}</div></sc-if>
+                      <sc-if value="{{ t.todo }}" hint-placeholder-val="{{ false }}"><div style="font-weight:600;font-size:13.5px;color:#b0a596;">{{ t.label }}</div></sc-if>
+                      <div style="font-size:12px;color:#9a8b78;margin-top:1px;">{{ t.time }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:20px;">
+                <div style="font-weight:700;font-size:14px;color:var(--chivi-ink);margin-bottom:6px;">Livreur assigné</div>
+                <sc-if value="{{ od.hasDriver }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:11px;margin-top:8px;"><div style="width:40px;height:40px;border-radius:50%;background:var(--chivi-maroon);color:var(--chivi-gold);display:flex;align-items:center;justify-content:center;font-family:'Cy Grotesk','Arial Black';">{{ od.driverInitial }}</div><div><div style="font-weight:600;color:var(--chivi-ink);">{{ od.driverName }}</div><div style="font-size:12px;color:#9a8b78;">{{ od.driverPhone }}</div></div></div>
+                </sc-if>
+                <sc-if value="{{ od.noDriver }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-size:13px;color:#9a8b78;margin:6px 0 12px;">Aucun livreur sur cette course.</div>
+                  <button onClick="{{ od.assign }}" style="width:100%;padding:13px;border:none;border-radius:13px;background:var(--chivi-maroon);color:var(--chivi-gold);font-weight:700;font-size:14px;cursor:pointer;">Assigner un livreur</button>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== DRIVERS ===== -->
+        <sc-if value="{{ isDrivers }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Livreurs">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+            <sc-for list="{{ drivers }}" as="d" hint-placeholder-count="4">
+              <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:20px;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <div style="width:48px;height:48px;flex:none;border-radius:50%;background:var(--chivi-maroon);color:var(--chivi-gold);display:flex;align-items:center;justify-content:center;font-family:'Cy Grotesk','Arial Black';font-size:19px;">{{ d.initial }}</div>
+                  <div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:15px;color:var(--chivi-ink);">{{ d.name }}</div><div style="font-size:12px;color:#9a8b78;">{{ d.phone }}</div></div>
+                  <sc-if value="{{ d.free }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;background:#e7f6ec;color:#1b7a44;">Libre</span></sc-if>
+                  <sc-if value="{{ d.busy }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;background:rgba(231,50,35,.14);color:#c0392b;">En course</span></sc-if>
+                </div>
+                <div style="height:1px;background:#efe6d3;margin:15px 0;"></div>
+                <sc-if value="{{ d.busy }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:12px;color:#9a8b78;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Livre actuellement</div>
+                  <div style="display:flex;justify-content:space-between;font-size:14px;"><span style="font-family:'Cy Grotesk','Arial Black';color:var(--chivi-maroon-deep);">{{ d.order }}</span><span style="color:#6d6358;">{{ d.dest }}</span></div>
+                </sc-if>
+                <sc-if value="{{ d.free }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;justify-content:space-between;font-size:13px;color:#6d6358;"><span>Courses aujourd'hui</span><b style="color:var(--chivi-ink);">{{ d.today }}</b></div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== MENU MANAGEMENT ===== -->
+        <sc-if value="{{ isMenuMgmt }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Gestion menu">
+          <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 130px;gap:12px;padding:13px 20px;background:#faf4e8;border-bottom:1px solid #efe6d3;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#9a8b78;font-weight:600;">
+              <span>Plat</span><span>Catégorie</span><span>Prix</span><span>Disponible</span>
+            </div>
+            <sc-for list="{{ menuItems }}" as="m" hint-placeholder-count="6">
+              <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 130px;gap:12px;padding:14px 20px;border-bottom:1px solid #f3ecdd;align-items:center;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <div style="width:42px;height:42px;flex:none;border-radius:11px;background:repeating-linear-gradient(135deg,#ece0c4 0 8px,#e4d5b3 8px 16px);"></div>
+                  <sc-if value="{{ m.on }}" hint-placeholder-val="{{ true }}"><b style="font-weight:600;font-size:14px;color:var(--chivi-ink);">{{ m.name }}</b></sc-if>
+                  <sc-if value="{{ m.off }}" hint-placeholder-val="{{ false }}"><b style="font-weight:600;font-size:14px;color:#b9ad9c;text-decoration:line-through;">{{ m.name }}</b></sc-if>
+                </div>
+                <span style="font-size:13px;color:#8a7f6e;">{{ m.cat }}</span>
+                <span style="font-family:'Cy Grotesk','Arial Black';font-size:15px;color:var(--chivi-maroon-deep);">{{ m.price }}</span>
+                <div>
+                  <sc-if value="{{ m.on }}" hint-placeholder-val="{{ true }}"><button onClick="{{ m.toggle }}" style="width:52px;height:29px;border-radius:999px;border:none;cursor:pointer;background:#1b9c53;position:relative;"><span style="position:absolute;top:3px;left:26px;width:23px;height:23px;border-radius:50%;background:#fff;"></span></button></sc-if>
+                  <sc-if value="{{ m.off }}" hint-placeholder-val="{{ false }}"><button onClick="{{ m.toggle }}" style="width:52px;height:29px;border-radius:999px;border:none;cursor:pointer;background:#d8ccb5;position:relative;"><span style="position:absolute;top:3px;left:3px;width:23px;height:23px;border-radius:50%;background:#fff;"></span></button></sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== REPORTS ===== -->
+        <sc-if value="{{ isReports }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Rapport financier">
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <sc-for list="{{ reportPeriods }}" as="rp" hint-placeholder-count="3">
+              <sc-if value="{{ rp.active }}" hint-placeholder-val="{{ false }}"><button onClick="{{ rp.select }}" style="padding:8px 16px;border-radius:999px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:var(--chivi-maroon);color:var(--chivi-gold);">{{ rp.label }}</button></sc-if>
+              <sc-if value="{{ rp.idle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ rp.select }}" style="padding:8px 16px;border-radius:999px;border:1px solid #e2d6bd;cursor:pointer;font-weight:600;font-size:13px;background:#fff;color:#6d6358;">{{ rp.label }}</button></sc-if>
+            </sc-for>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+            <div style="background:var(--chivi-maroon);border-radius:18px;padding:20px;color:#fff;"><div style="font-size:12px;color:rgba(255,232,166,.7);text-transform:uppercase;letter-spacing:.04em;">Revenus {{ reportLabel }}</div><div style="font-family:'Cy Grotesk','Arial Black';font-size:30px;color:var(--chivi-gold);margin-top:10px;">{{ repRevenue }}</div><div style="font-size:12px;color:var(--chivi-cream);margin-top:6px;">{{ repOrders }} commandes</div></div>
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:20px;"><div style="font-size:12px;color:#9a8b78;text-transform:uppercase;letter-spacing:.04em;">Coûts (denrées + livraison)</div><div style="font-family:'Cy Grotesk','Arial Black';font-size:30px;color:var(--chivi-ink);margin-top:10px;">{{ repCosts }}</div><div style="font-size:12px;color:#9a8b78;margin-top:6px;">dont {{ repDelivery }} livraison</div></div>
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:20px;"><div style="font-size:12px;color:#9a8b78;text-transform:uppercase;letter-spacing:.04em;">Bénéfice net</div><div style="font-family:'Cy Grotesk','Arial Black';font-size:30px;color:#1b7a44;margin-top:10px;">{{ repProfit }}</div><div style="font-size:12px;color:#1b7a44;margin-top:6px;font-weight:600;">Marge {{ repMargin }}</div></div>
+          </div>
+          <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;overflow:hidden;margin-top:16px;">
+            <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:12px;padding:13px 20px;background:#faf4e8;border-bottom:1px solid #efe6d3;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#9a8b78;font-weight:600;"><span>{{ reportRowHead }}</span><span>Commandes</span><span>Revenus</span><span>Coûts</span><span>Bénéfice</span></div>
+            <sc-for list="{{ reportRows }}" as="r" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:12px;padding:14px 20px;border-bottom:1px solid #f3ecdd;align-items:center;font-size:14px;">
+                <span style="font-weight:600;color:var(--chivi-ink);">{{ r.label }}</span>
+                <span style="color:#6d6358;">{{ r.orders }}</span>
+                <span style="font-family:'Cy Grotesk','Arial Black';color:var(--chivi-maroon-deep);">{{ r.revenue }}</span>
+                <span style="color:#6d6358;">{{ r.costs }}</span>
+                <span style="font-family:'Cy Grotesk','Arial Black';color:#1b7a44;">{{ r.profit }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== CLIENTS ===== -->
+        <sc-if value="{{ isClients }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Clients">
+          <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1.6fr 1.2fr 1fr 1fr 40px;gap:12px;padding:13px 20px;background:#faf4e8;border-bottom:1px solid #efe6d3;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#9a8b78;font-weight:600;"><span>Client</span><span>WhatsApp</span><span>Commandes</span><span>Total dépensé</span><span></span></div>
+            <sc-for list="{{ clients }}" as="c" hint-placeholder-count="6">
+              <div onClick="{{ c.open }}" style="display:grid;grid-template-columns:1.6fr 1.2fr 1fr 1fr 40px;gap:12px;padding:15px 20px;border-bottom:1px solid #f3ecdd;align-items:center;cursor:pointer;font-size:14px;">
+                <div style="display:flex;align-items:center;gap:11px;"><div style="width:38px;height:38px;flex:none;border-radius:50%;background:#f4ead2;color:var(--chivi-maroon);display:flex;align-items:center;justify-content:center;font-family:'Cy Grotesk','Arial Black';">{{ c.initial }}</div><b style="font-weight:600;color:var(--chivi-ink);">{{ c.name }}</b></div>
+                <span style="color:#6d6358;font-size:13px;">{{ c.phone }}</span>
+                <span style="color:#6d6358;">{{ c.orders }}</span>
+                <span style="font-family:'Cy Grotesk','Arial Black';color:var(--chivi-maroon-deep);">{{ c.spent }}</span>
+                <span style="color:#c9bda6;text-align:right;">›</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== CLIENT DETAIL ===== -->
+        <sc-if value="{{ isClientDetail }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Fiche client">
+          <button onClick="{{ goClients }}" style="display:inline-flex;align-items:center;gap:7px;background:none;border:none;color:var(--chivi-maroon);font-weight:600;font-size:13px;cursor:pointer;margin-bottom:16px;">‹ Retour aux clients</button>
+          <div style="display:grid;grid-template-columns:1fr 1.7fr;gap:16px;">
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:24px;text-align:center;">
+              <div style="width:76px;height:76px;margin:0 auto;border-radius:50%;background:var(--chivi-maroon);color:var(--chivi-gold);display:flex;align-items:center;justify-content:center;font-family:'Cy Grotesk','Arial Black';font-size:30px;">{{ cd.initial }}</div>
+              <div style="font-family:'Space Grotesk';font-weight:700;font-size:19px;color:var(--chivi-ink);margin-top:14px;">{{ cd.name }}</div>
+              <div style="display:inline-flex;align-items:center;gap:6px;background:#e7f6ec;color:#1b7a44;font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;margin-top:9px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.3A10 10 0 1 0 12 2z"/></svg>Profil auto-créé via WhatsApp</div>
+              <div style="height:1px;background:#efe6d3;margin:18px 0;"></div>
+              <div style="display:flex;flex-direction:column;gap:12px;text-align:left;">
+                <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:#9a8b78;">WhatsApp</span><b style="color:var(--chivi-ink);">{{ cd.phone }}</b></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:#9a8b78;">Zone</span><b style="color:var(--chivi-ink);">{{ cd.zone }}</b></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:#9a8b78;">Client depuis</span><b style="color:var(--chivi-ink);">{{ cd.since }}</b></div>
+              </div>
+              <div style="display:flex;gap:12px;margin-top:18px;">
+                <div style="flex:1;background:#faf4e8;border-radius:13px;padding:13px;"><div style="font-family:'Cy Grotesk','Arial Black';font-size:22px;color:var(--chivi-maroon-deep);">{{ cd.orders }}</div><div style="font-size:11px;color:#9a8b78;">commandes</div></div>
+                <div style="flex:1;background:#faf4e8;border-radius:13px;padding:13px;"><div style="font-family:'Cy Grotesk','Arial Black';font-size:18px;color:var(--chivi-maroon-deep);">{{ cd.spent }}</div><div style="font-size:11px;color:#9a8b78;">dépensé</div></div>
+              </div>
+            </div>
+            <div style="background:#fff;border:1px solid #ece2cd;border-radius:18px;padding:22px;">
+              <div style="font-weight:700;font-size:15px;color:var(--chivi-ink);margin-bottom:14px;">Historique des commandes</div>
+              <sc-for list="{{ cd.history }}" as="h" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid #f3ecdd;">
+                  <div><div style="font-family:'Cy Grotesk','Arial Black';font-size:14px;color:var(--chivi-maroon-deep);">{{ h.number }}</div><div style="font-size:12.5px;color:#9a8b78;margin-top:2px;">{{ h.date }} · {{ h.items }}</div></div>
+                  <div style="text-align:right;"><div style="font-family:'Cy Grotesk','Arial Black';font-size:15px;color:var(--chivi-ink);">{{ h.total }}</div><span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#e7f6ec;color:#1b7a44;">Livrée</span></div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1320,&quot;height&quot;:868},&quot;orderBadges&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Navigation&quot;,&quot;label&quot;:&quot;Badge commandes en attente&quot;}}">
+class Component extends DCLogic {
+  state = { screen:'dashboard', orderFilter:'all', reportPeriod:'jour', menuOff:['amiwo'] };
+
+  ic(path){ return React.createElement('svg',{width:18,height:18,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:2},
+    React.createElement('path',{d:path})); }
+
+  ORDERS = [
+    { id:'2050', number:'#CHV-2050', client:'Sylvie A.', time:"Aujourd'hui 19:52", status:'new', amount:'5 000 FCFA', driver:'' },
+    { id:'2048', number:'#CHV-2048', client:'Kevin D.', time:"Aujourd'hui 19:46", status:'prep', amount:'3 500 FCFA', driver:'' },
+    { id:'2045', number:'#CHV-2045', client:'Fatou B.', time:"Aujourd'hui 19:38", status:'route', amount:'4 000 FCFA', driver:'Ismaël' },
+    { id:'2042', number:'#CHV-2042', client:'Roland T.', time:"Aujourd'hui 19:20", status:'done', amount:'2 500 FCFA', driver:'Prosper' },
+    { id:'2039', number:'#CHV-2039', client:'Aïcha M.', time:"Aujourd'hui 18:58", status:'done', amount:'6 500 FCFA', driver:'Ismaël' },
+    { id:'2037', number:'#CHV-2037', client:'Boris K.', time:"Aujourd'hui 18:41", status:'done', amount:'1 500 FCFA', driver:'Prosper' },
+  ];
+  DRIVERS = [
+    { initial:'I', name:'Ismaël G.', phone:'+229 97 12 34 56', busy:true, order:'#CHV-2045', dest:'Fidjrossè', today:8 },
+    { initial:'P', name:'Prosper A.', phone:'+229 96 88 21 09', busy:false, today:11 },
+    { initial:'M', name:'Marius H.', phone:'+229 95 44 76 32', busy:false, today:6 },
+    { initial:'D', name:'Delphine O.', phone:'+229 99 03 55 18', busy:true, order:'#CHV-2044', dest:'Akpakpa', today:5 },
+  ];
+  MENU = [
+    { id:'poulet', name:'Poulet CHIVI braisé', cat:'Plats CHIVI', price:'2 500 FCFA' },
+    { id:'riz', name:'Riz CHIVI complet', cat:'Plats CHIVI', price:'2 000 FCFA' },
+    { id:'poisson', name:'Poisson braisé CHIVI', cat:'Plats CHIVI', price:'3 000 FCFA' },
+    { id:'haricot', name:'Haricot au gari', cat:'Traditionnels', price:'1 000 FCFA' },
+    { id:'akassa', name:'Akassa poisson', cat:'Traditionnels', price:'1 500 FCFA' },
+    { id:'amiwo', name:'Amiwo poulet', cat:'Traditionnels', price:'2 000 FCFA' },
+    { id:'bissap', name:'Jus de Bissap 250ml', cat:'Boissons', price:'500 FCFA' },
+  ];
+  CLIENTS = [
+    { id:'sylvie', initial:'S', name:'Sylvie A.', phone:'+229 97 22 14 08', orders:12, spent:'48 500 FCFA', zone:'Fidjrossè', since:'Mars 2026' },
+    { id:'kevin', initial:'K', name:'Kevin D.', phone:'+229 96 51 33 77', orders:7, spent:'26 000 FCFA', zone:'Cadjèhoun', since:'Avril 2026' },
+    { id:'fatou', initial:'F', name:'Fatou B.', phone:'+229 99 40 12 65', orders:21, spent:'89 000 FCFA', zone:'Akpakpa', since:'Janv. 2026' },
+    { id:'roland', initial:'R', name:'Roland T.', phone:'+229 95 78 90 21', orders:4, spent:'12 500 FCFA', zone:'Fidjrossè', since:'Juin 2026' },
+    { id:'aicha', initial:'A', name:'Aïcha M.', phone:'+229 97 66 04 39', orders:15, spent:'61 000 FCFA', zone:'Ganhi', since:'Fév. 2026' },
+  ];
+  CHART = [ {day:'Sam',v:0.55},{day:'Dim',v:0.72},{day:'Lun',v:0.40},{day:'Mar',v:0.60},{day:'Mer',v:0.78},{day:'Jeu',v:0.66},{day:'Ven',v:0.92} ];
+  REPORTS = {
+    jour:{ label:"aujourd'hui", rowHead:'Heure', revenue:'168 500 FCFA', orders:47, costs:'96 200 FCFA', delivery:'23 500 FCFA', profit:'72 300 FCFA', margin:'43%',
+      rows:[ {label:'11h–14h',orders:14,revenue:'52 000 FCFA',costs:'29 800 FCFA',profit:'22 200 FCFA'},{label:'14h–18h',orders:9,revenue:'31 500 FCFA',costs:'18 600 FCFA',profit:'12 900 FCFA'},{label:'18h–22h',orders:24,revenue:'85 000 FCFA',costs:'47 800 FCFA',profit:'37 200 FCFA'} ] },
+    semaine:{ label:'cette semaine', rowHead:'Jour', revenue:'1 042 000 FCFA', orders:298, costs:'601 000 FCFA', delivery:'149 000 FCFA', profit:'441 000 FCFA', margin:'42%',
+      rows:[ {label:'Lundi',orders:38,revenue:'128 000 FCFA',costs:'74 000 FCFA',profit:'54 000 FCFA'},{label:'Mardi',orders:41,revenue:'142 000 FCFA',costs:'82 000 FCFA',profit:'60 000 FCFA'},{label:'Mercredi',orders:47,revenue:'161 000 FCFA',costs:'93 000 FCFA',profit:'68 000 FCFA'},{label:'Jeudi',orders:44,revenue:'152 000 FCFA',costs:'88 000 FCFA',profit:'64 000 FCFA'},{label:'Vendredi',orders:52,revenue:'179 000 FCFA',costs:'103 000 FCFA',profit:'76 000 FCFA'} ] },
+    mois:{ label:'ce mois', rowHead:'Semaine', revenue:'4 380 000 FCFA', orders:1254, costs:'2 540 000 FCFA', delivery:'628 000 FCFA', profit:'1 840 000 FCFA', margin:'42%',
+      rows:[ {label:'Semaine 1',orders:298,revenue:'1 042 000 FCFA',costs:'604 000 FCFA',profit:'438 000 FCFA'},{label:'Semaine 2',orders:312,revenue:'1 089 000 FCFA',costs:'631 000 FCFA',profit:'458 000 FCFA'},{label:'Semaine 3',orders:321,revenue:'1 121 000 FCFA',costs:'650 000 FCFA',profit:'471 000 FCFA'},{label:'Semaine 4',orders:323,revenue:'1 128 000 FCFA',costs:'655 000 FCFA',profit:'473 000 FCFA'} ] },
+  };
+
+  go(screen){ this.setState({ screen }); }
+
+  renderVals(){
+    const s=this.state;
+    const showBadges=this.props.orderBadges??true;
+    const newCount=this.ORDERS.filter(o=>o.status==='new').length;
+
+    const navDefs=[
+      { id:'dashboard', label:'Dashboard', icon:this.ic('M3 13h8V3H3v10zm10 8h8V3h-8v18zM3 21h8v-6H3v6z') },
+      { id:'orders', label:'Commandes', icon:this.ic('M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2'), badge:newCount, hasBadge:showBadges&&newCount>0 },
+      { id:'drivers', label:'Livreurs', icon:this.ic('M5 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0zm10 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM7 17h8M3 6h11v11M14 9h4l3 4v4h-2') },
+      { id:'menu', label:'Gestion menu', icon:this.ic('M3 6h18M3 12h18M3 18h18') },
+      { id:'reports', label:'Rapports', icon:this.ic('M4 20V10M10 20V4M16 20v-7M22 20H2') },
+      { id:'clients', label:'Clients', icon:this.ic('M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75') },
+    ];
+    const activeGroup = ['orders','orderDetail'].includes(s.screen)?'orders':(['clients','clientDetail'].includes(s.screen)?'clients':s.screen);
+    const nav=navDefs.map(n=>({ ...n, go:()=>this.go(n.id), active:activeGroup===n.id, idle:activeGroup!==n.id, hasBadge:!!n.hasBadge, badge:n.badge }));
+
+    const titles={ dashboard:['Bonjour Ariane 👋',"Vendredi 5 juillet · aperçu du service"], orders:['Commandes','Toutes les commandes du jour'], orderDetail:['Détail commande','Suivi et affectation'], drivers:['Livreurs','Disponibilité et courses en temps réel'], menu:['Gestion du menu','Activer, désactiver et tarifer les plats'], reports:['Rapport financier','Revenus, coûts et marges'], clients:['Clients','Profils créés automatiquement via WhatsApp'], clientDetail:['Fiche client','Historique et dépenses'] };
+    const [pageTitle,pageSub]=titles[s.screen]||titles.dashboard;
+
+    const filters=[ {id:'all',label:'Toutes'},{id:'new',label:'Reçues'},{id:'prep',label:'En préparation'},{id:'route',label:'En route'} ];
+    const orderFilters=filters.map(f=>({ label:f.label, select:()=>this.setState({orderFilter:f.id}), active:s.orderFilter===f.id, idle:s.orderFilter!==f.id }));
+    const orders=this.ORDERS.filter(o=>s.orderFilter==='all'||o.status===s.orderFilter).map(o=>({
+      number:o.number, client:o.client, time:o.time, amount:o.amount,
+      sNew:o.status==='new', sPrep:o.status==='prep', sRoute:o.status==='route', sDone:o.status==='done',
+      driver:o.driver, hasDriver:!!o.driver, noDriver:!o.driver, open:()=>this.setState({screen:'orderDetail',orderId:o.id}),
+    }));
+
+    const drivers=this.DRIVERS.map(d=>({ ...d, free:!d.busy, order:d.order||'', dest:d.dest||'' }));
+    const menuItems=this.MENU.map(m=>{ const on=!s.menuOff.includes(m.id); return { name:m.name, cat:m.cat, price:m.price, on, off:!on,
+      toggle:()=>this.setState({ menuOff: on?[...s.menuOff,m.id]:s.menuOff.filter(x=>x!==m.id) }) }; });
+
+    const periods=[ {id:'jour',label:"Aujourd'hui"},{id:'semaine',label:'Cette semaine'},{id:'mois',label:'Ce mois'} ];
+    const reportPeriods=periods.map(p=>({ label:p.label, select:()=>this.setState({reportPeriod:p.id}), active:s.reportPeriod===p.id, idle:s.reportPeriod!==p.id }));
+    const rep=this.REPORTS[s.reportPeriod];
+
+    const clients=this.CLIENTS.map(c=>({ initial:c.initial, name:c.name, phone:c.phone, orders:c.orders, spent:c.spent, open:()=>this.setState({screen:'clientDetail',clientId:c.id}) }));
+    const cdSrc=this.CLIENTS.find(c=>c.id===s.clientId)||this.CLIENTS[0];
+    const cd={ ...cdSrc, history:[
+      { number:'#CHV-2050', date:"Aujourd'hui 19:52", items:'2 articles', total:'5 000 FCFA' },
+      { number:'#CHV-2031', date:'3 juil. 20:14', items:'3 articles', total:'6 500 FCFA' },
+      { number:'#CHV-2018', date:'1 juil. 13:02', items:'1 article', total:'2 500 FCFA' },
+      { number:'#CHV-1994', date:'28 juin 19:40', items:'2 articles', total:'4 000 FCFA' },
+    ] };
+
+    const od={ number:'#CHV-2048', time:"Aujourd'hui 19:46", payment:'Cash à la livraison',
+      items:[ {qty:1,name:'Poulet CHIVI braisé',opts:'Grand · +Frites',price:'3 500 FCFA'},{qty:1,name:'Jus de Bissap 250ml',opts:'',price:'500 FCFA'} ],
+      track:[ {n:1,label:'Reçue',time:'19:46',done:true,todo:false,line:true},{n:2,label:'En préparation',time:'19:48 · en cours',done:true,todo:false,line:true},{n:3,label:'En route',time:'—',done:false,todo:true,line:true},{n:4,label:'Livrée',time:'—',done:false,todo:true,line:false} ],
+      noDriver:true, hasDriver:false, assign:()=>{} };
+
+    return {
+      nav, pageTitle, pageSub,
+      isDashboard:s.screen==='dashboard', isOrders:s.screen==='orders', isOrderDetail:s.screen==='orderDetail',
+      isDrivers:s.screen==='drivers', isMenuMgmt:s.screen==='menu', isReports:s.screen==='reports',
+      isClients:s.screen==='clients', isClientDetail:s.screen==='clientDetail',
+      goOrders:()=>this.go('orders'), goClients:()=>this.go('clients'),
+      orderFilters, orders, od, drivers, menuItems,
+      reportPeriods, reportLabel:rep.label, reportRowHead:rep.rowHead, reportRows:rep.rows,
+      repRevenue:rep.revenue, repOrders:rep.orders, repCosts:rep.costs, repDelivery:rep.delivery, repProfit:rep.profit, repMargin:rep.margin,
+      clients, cd,
+    };
+  }
+}
+</script>
+</body>
+</html>

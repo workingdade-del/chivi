@@ -1,0 +1,30 @@
+/* ============================================================
+   CHIVI — Spacing & radius tokens
+   The source is packaging art: generous poster margins,
+   tight label padding. Radii come straight from the file
+   (label capsules ~24px, the CTA pill ~30px, price bursts
+   are organic — approximated with a large radius).
+   ============================================================ */
+:root {
+  /* ---- Spacing scale ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-poster: 50px;   /* source frame padding = 50px */
+
+  /* ---- Radii (verbatim / approximated from source) ---- */
+  --radius-none: 0;
+  --radius-sm: 6px;
+  --radius-card: 24px;     /* rounded product tiles */
+  --radius-capsule: 30px;  /* wa.me CTA pill (source 30.512px) */
+  --radius-burst: 62px;    /* organic price-burst blob */
+  --radius-full: 999px;
+
+  /* ---- Poster grid ---- */
+  --gutter-poster: 50px;   /* source gap between pages = 50px */
+}

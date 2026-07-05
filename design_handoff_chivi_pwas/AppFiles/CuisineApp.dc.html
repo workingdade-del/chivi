@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="PWA Cuisine — Écran de production" description="Tableau des tickets de cuisine CHIVI, mode sombre haut-contraste pour tablette : compteurs, tickets, statut Nouvelle → En préparation → Prête, détail commande." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+  @keyframes chiviPulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+</style>
+</helmet>
+
+<div style="min-height:100%;background:#120707;display:flex;align-items:center;justify-content:center;padding:26px;font-family:'Space Grotesk',system-ui,sans-serif;box-sizing:border-box;">
+  <div style="width:1180px;height:800px;background:#160a0a;border:12px solid #060202;border-radius:26px;box-shadow:0 40px 90px -30px rgba(0,0,0,.9);overflow:hidden;position:relative;display:flex;flex-direction:column;">
+
+    <!-- ===== TOP BAR ===== -->
+    <div style="flex:none;background:#0A0000;border-bottom:1px solid #2a1010;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;">
+      <div style="display:flex;align-items:center;gap:20px;">
+        <div style="width:104px;height:32px;background:url('../../assets/logo/chivi-wordmark-gold.png') left center/contain no-repeat;"></div>
+        <div style="border-left:1px solid #3a1616;padding-left:20px;">
+          <div style="font-family:'Redgar','Arial Black';color:#fff;font-size:17px;letter-spacing:.04em;text-transform:uppercase;">Cuisine · Production</div>
+          <div style="font-size:12px;color:#a07d6d;margin-top:2px;">Fidjrossè · Cotonou</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="display:flex;align-items:center;gap:10px;background:rgba(255,182,0,.1);border:1px solid rgba(255,182,0,.3);border-radius:14px;padding:10px 16px;">
+          <span style="width:9px;height:9px;border-radius:50%;background:#FFB600;animation:chiviPulse 1.4s infinite;"></span>
+          <span style="font-family:'Cy Grotesk','Arial Black';font-size:26px;color:#FFB600;line-height:1;">{{ countNouvelle }}</span>
+          <span style="font-size:11px;color:#d9b48f;letter-spacing:.06em;text-transform:uppercase;line-height:1.1;">En<br>attente</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;background:rgba(231,50,35,.1);border:1px solid rgba(231,50,35,.32);border-radius:14px;padding:10px 16px;">
+          <span style="font-family:'Cy Grotesk','Arial Black';font-size:26px;color:#ff6a5c;line-height:1;">{{ countPrepa }}</span>
+          <span style="font-size:11px;color:#e6a79f;letter-spacing:.06em;text-transform:uppercase;line-height:1.1;">En<br>prépa</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;background:rgba(49,192,106,.1);border:1px solid rgba(49,192,106,.3);border-radius:14px;padding:10px 16px;">
+          <span style="font-family:'Cy Grotesk','Arial Black';font-size:26px;color:#4fd587;line-height:1;">{{ countPrete }}</span>
+          <span style="font-size:11px;color:#9fd9b8;letter-spacing:.06em;text-transform:uppercase;line-height:1.1;">Prêtes</span>
+        </div>
+        <div style="border-left:1px solid #3a1616;padding-left:16px;margin-left:4px;text-align:right;">
+          <div style="font-family:'Cy Grotesk','Arial Black';font-size:22px;color:#fff;line-height:1;">{{ clock }}</div>
+          <div style="font-size:11px;color:#a07d6d;letter-spacing:.05em;text-transform:uppercase;margin-top:3px;">{{ today }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== BOARD ===== -->
+    <div style="flex:1;overflow-y:auto;padding:20px 24px 28px;">
+      <sc-if value="{{ hasTickets }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start;">
+        <sc-for list="{{ tickets }}" as="t" hint-placeholder-count="6">
+          <div style="position:relative;background:#1d0e0e;border:1px solid #3a1c1c;border-radius:16px;overflow:hidden;padding:18px 16px 15px;display:flex;flex-direction:column;gap:11px;font-size:16px;">
+            <sc-if value="{{ t.isNouvelle }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;top:0;left:0;right:0;height:5px;background:#FFB600;"></div></sc-if>
+            <sc-if value="{{ t.isPrepa }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:0;left:0;right:0;height:5px;background:#E73223;"></div></sc-if>
+            <sc-if value="{{ t.isPrete }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:0;left:0;right:0;height:5px;background:#31C06A;"></div></sc-if>
+
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+              <div style="cursor:pointer;" onClick="{{ t.open }}">
+                <div style="font-family:'Cy Grotesk','Arial Black';font-size:1.55em;color:var(--chivi-gold);line-height:1;">{{ t.number }}</div>
+                <div style="font-size:.78em;color:#b79b86;margin-top:5px;">Reçue à {{ t.time }}</div>
+              </div>
+              <div style="text-align:right;flex:none;">
+                <sc-if value="{{ t.isNouvelle }}" hint-placeholder-val="{{ true }}"><div style="display:inline-block;font-size:.7em;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:rgba(255,182,0,.16);color:#FFB600;">Nouvelle</div></sc-if>
+                <sc-if value="{{ t.isPrepa }}" hint-placeholder-val="{{ false }}"><div style="display:inline-block;font-size:.7em;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:rgba(231,50,35,.18);color:#ff7264;">En préparation</div></sc-if>
+                <sc-if value="{{ t.isPrete }}" hint-placeholder-val="{{ false }}"><div style="display:inline-block;font-size:.7em;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:rgba(49,192,106,.16);color:#4fd587;">Prête</div></sc-if>
+                <sc-if value="{{ t.urgent }}" hint-placeholder-val="{{ false }}"><div style="font-family:'Cy Grotesk','Arial Black';font-size:1.05em;margin-top:7px;color:#ff7264;">{{ t.elapsed }}</div></sc-if>
+                <sc-if value="{{ t.notUrgent }}" hint-placeholder-val="{{ true }}"><div style="font-family:'Cy Grotesk','Arial Black';font-size:1.05em;margin-top:7px;color:#a07d6d;">{{ t.elapsed }}</div></sc-if>
+              </div>
+            </div>
+            <div style="height:1px;background:#3a1c1c;"></div>
+            <div style="display:flex;flex-direction:column;gap:9px;cursor:pointer;" onClick="{{ t.open }}">
+              <sc-for list="{{ t.items }}" as="it" hint-placeholder-count="2">
+                <div style="display:flex;gap:11px;">
+                  <span style="font-family:'Cy Grotesk','Arial Black';font-size:1.05em;color:var(--chivi-amber);min-width:1.7em;">{{ it.qty }}×</span>
+                  <span style="flex:1;">
+                    <span style="font-size:1em;font-weight:600;color:#fff;">{{ it.name }}</span>
+                    <sc-if value="{{ it.hasOpts }}" hint-placeholder-val="{{ false }}"><span style="display:block;font-size:.8em;color:#d3a78d;margin-top:2px;">{{ it.opts }}</span></sc-if>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ t.showNote }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#2c1510;border-left:3px solid var(--chivi-amber);border-radius:8px;padding:9px 11px;font-size:.82em;color:var(--chivi-cream);line-height:1.35;"><b style="color:var(--chivi-amber);text-transform:uppercase;letter-spacing:.04em;font-size:.9em;">Note client</b><br>{{ t.note }}</div>
+            </sc-if>
+            <sc-if value="{{ t.isNouvelle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ t.advance }}" style="margin-top:3px;width:100%;padding:15px;border:none;border-radius:13px;font-family:'Space Grotesk';font-weight:700;font-size:.98em;cursor:pointer;background:#FFB600;color:#3a1500;box-shadow:0 8px 18px -10px #FFB600;">Commencer la préparation</button></sc-if>
+            <sc-if value="{{ t.isPrepa }}" hint-placeholder-val="{{ false }}"><button onClick="{{ t.advance }}" style="margin-top:3px;width:100%;padding:15px;border:none;border-radius:13px;font-family:'Space Grotesk';font-weight:700;font-size:.98em;cursor:pointer;background:#E73223;color:#fff;box-shadow:0 8px 18px -10px #E73223;">Marquer prêt</button></sc-if>
+            <sc-if value="{{ t.isPrete }}" hint-placeholder-val="{{ false }}"><button onClick="{{ t.advance }}" style="margin-top:3px;width:100%;padding:15px;border:none;border-radius:13px;font-family:'Space Grotesk';font-weight:700;font-size:.98em;cursor:pointer;background:#31C06A;color:#04351b;box-shadow:0 8px 18px -10px #31C06A;">Remis au livreur</button></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+      <sc-if value="{{ noTickets }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:420px;color:#7a5a4c;gap:10px;">
+        <div style="font-family:'Redgar','Arial Black';font-size:30px;color:var(--chivi-gold);text-transform:uppercase;">Tout est servi</div>
+        <div style="font-size:15px;">Aucune commande en attente. La cuillère se repose.</div>
+      </div>
+      </sc-if>
+    </div>
+
+    <!-- ===== DETAIL MODAL ===== -->
+    <sc-if value="{{ modalOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(6,2,2,.72);display:flex;align-items:center;justify-content:center;padding:40px;z-index:50;">
+      <div style="position:relative;width:560px;max-height:100%;overflow:hidden;background:#1d0e0e;border:1px solid #4a2020;border-radius:20px;padding:28px 28px 26px;">
+        <sc-if value="{{ detail.isNouvelle }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;top:0;left:0;right:0;height:6px;background:#FFB600;"></div></sc-if>
+        <sc-if value="{{ detail.isPrepa }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:0;left:0;right:0;height:6px;background:#E73223;"></div></sc-if>
+        <sc-if value="{{ detail.isPrete }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:0;left:0;right:0;height:6px;background:#31C06A;"></div></sc-if>
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+          <div>
+            <div style="font-family:'Cy Grotesk','Arial Black';font-size:44px;color:var(--chivi-gold);line-height:.95;">{{ detail.number }}</div>
+            <div style="font-size:14px;color:#b79b86;margin-top:8px;">Reçue à {{ detail.time }} · {{ detail.elapsed }}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;">
+            <sc-if value="{{ detail.isNouvelle }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:7px 13px;border-radius:999px;background:rgba(255,182,0,.16);color:#FFB600;">Nouvelle</span></sc-if>
+            <sc-if value="{{ detail.isPrepa }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:7px 13px;border-radius:999px;background:rgba(231,50,35,.18);color:#ff7264;">En préparation</span></sc-if>
+            <sc-if value="{{ detail.isPrete }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:7px 13px;border-radius:999px;background:rgba(49,192,106,.16);color:#4fd587;">Prête</span></sc-if>
+            <button onClick="{{ closeModal }}" style="width:38px;height:38px;border-radius:50%;border:1px solid #4a2020;background:#2a1212;color:#c9a68f;cursor:pointer;font-size:18px;line-height:1;">✕</button>
+          </div>
+        </div>
+
+        <div style="height:1px;background:#3a1c1c;margin:20px 0;"></div>
+
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <sc-for list="{{ detail.items }}" as="it" hint-placeholder-count="2">
+            <div style="display:flex;gap:14px;align-items:flex-start;">
+              <span style="font-family:'Cy Grotesk','Arial Black';font-size:24px;color:var(--chivi-amber);min-width:1.7em;">{{ it.qty }}×</span>
+              <div style="flex:1;">
+                <div style="font-size:18px;font-weight:700;color:#fff;">{{ it.name }}</div>
+                <sc-if value="{{ it.hasOpts }}" hint-placeholder-val="{{ false }}"><div style="font-size:14px;color:#d3a78d;margin-top:3px;">{{ it.opts }}</div></sc-if>
+                <sc-if value="{{ it.hasNote }}" hint-placeholder-val="{{ false }}"><div style="font-size:13px;color:var(--chivi-cream);margin-top:4px;font-style:italic;">« {{ it.note }} »</div></sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ detail.showNote }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:20px;background:#2c1510;border-left:3px solid var(--chivi-amber);border-radius:10px;padding:13px 15px;font-size:14px;color:var(--chivi-cream);line-height:1.45;"><b style="color:var(--chivi-amber);text-transform:uppercase;letter-spacing:.04em;font-size:12px;">Note client</b><br>{{ detail.note }}</div>
+        </sc-if>
+
+        <sc-if value="{{ detail.isNouvelle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ detail.advance }}" style="margin-top:24px;width:100%;padding:18px;border:none;border-radius:15px;font-family:'Space Grotesk';font-weight:700;font-size:17px;cursor:pointer;background:#FFB600;color:#3a1500;">Commencer la préparation</button></sc-if>
+        <sc-if value="{{ detail.isPrepa }}" hint-placeholder-val="{{ false }}"><button onClick="{{ detail.advance }}" style="margin-top:24px;width:100%;padding:18px;border:none;border-radius:15px;font-family:'Space Grotesk';font-weight:700;font-size:17px;cursor:pointer;background:#E73223;color:#fff;">Marquer prêt</button></sc-if>
+        <sc-if value="{{ detail.isPrete }}" hint-placeholder-val="{{ false }}"><button onClick="{{ detail.advance }}" style="margin-top:24px;width:100%;padding:18px;border:none;border-radius:15px;font-family:'Space Grotesk';font-weight:700;font-size:17px;cursor:pointer;background:#31C06A;color:#04351b;">Remis au livreur</button></sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1236,&quot;height&quot;:848},&quot;sortByUrgency&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Affichage&quot;,&quot;label&quot;:&quot;Trier par urgence&quot;},&quot;showNotes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Affichage&quot;,&quot;label&quot;:&quot;Notes client&quot;}}">
+class Component extends DCLogic {
+  STATUS = {
+    nouvelle:{ next:'prepa', pri:0 },
+    prepa:{ next:'prete', pri:1 },
+    prete:{ next:'done', pri:2 },
+  };
+
+  state = {
+    openId: null,
+    tickets: [
+      { id:'2050', number:'#CHV-2050', time:'19:52', mins:2, status:'nouvelle',
+        items:[ {qty:2, name:'Haricot au gari', opts:'Gésier · Grand · +Frites'}, {qty:1, name:'Jus de Bissap 250ml', opts:''} ],
+        note:'Bien pimenté, s\'il vous plaît.' },
+      { id:'2049', number:'#CHV-2049', time:'19:49', mins:5, status:'nouvelle',
+        items:[ {qty:1, name:'Poulet CHIVI braisé', opts:'Grand'}, {qty:1, name:'Alloco', opts:''} ], note:'' },
+      { id:'2048', number:'#CHV-2048', time:'19:46', mins:8, status:'prepa',
+        items:[ {qty:1, name:'Poisson braisé CHIVI', opts:'Grand'}, {qty:2, name:'Jus de Gingembre 250ml', opts:'', note:'Un sans sucre'} ],
+        note:'Un poisson sans piment.' },
+      { id:'2047', number:'#CHV-2047', time:'19:41', mins:13, status:'prepa',
+        items:[ {qty:3, name:'Akassa poisson', opts:''} ], note:'' },
+      { id:'2045', number:'#CHV-2045', time:'19:38', mins:16, status:'prete',
+        items:[ {qty:1, name:'Riz CHIVI complet', opts:'Viande'}, {qty:1, name:'Eau minérale', opts:''} ], note:'' },
+      { id:'2044', number:'#CHV-2044', time:'19:35', mins:19, status:'prete',
+        items:[ {qty:2, name:'Amiwo poulet', opts:''} ], note:'' },
+    ],
+  };
+
+  advance(id, e){ if(e&&e.stopPropagation) e.stopPropagation();
+    const cur=this.state.tickets.find(t=>t.id===id);
+    const goingDone = cur && this.STATUS[cur.status].next==='done';
+    this.setState({ tickets: this.state.tickets
+      .map(t=> t.id===id ? {...t, status:this.STATUS[t.status].next} : t)
+      .filter(t=> t.status!=='done'),
+      openId: (this.state.openId===id && goingDone) ? null : this.state.openId });
+  }
+
+  buildTicket(t, showNotes){
+    const urgent = t.mins>=10 && t.status!=='prete';
+    return {
+      id:t.id, number:t.number, time:t.time,
+      isNouvelle:t.status==='nouvelle', isPrepa:t.status==='prepa', isPrete:t.status==='prete',
+      elapsed:'il y a '+t.mins+' min', urgent, notUrgent:!urgent,
+      items: t.items.map(it=>({ qty:it.qty, name:it.name, opts:it.opts, hasOpts:!!it.opts, note:it.note||'', hasNote:!!it.note })),
+      showNote: showNotes && !!t.note, note:t.note,
+      advance:(e)=>this.advance(t.id, e), open:()=>this.setState({openId:t.id}),
+    };
+  }
+
+  renderVals(){
+    const s=this.state;
+    const showNotes = this.props.showNotes ?? true;
+    const byUrgency = this.props.sortByUrgency ?? true;
+
+    const sorted=[...s.tickets].sort((a,b)=> this.STATUS[a.status].pri-this.STATUS[b.status].pri
+      || (byUrgency ? b.mins-a.mins : a.mins-b.mins));
+    const tickets=sorted.map(t=>this.buildTicket(t, showNotes));
+    const cur=s.tickets.find(t=>t.id===s.openId);
+
+    return {
+      clock:'19:54', today:'Ven. 4 juil.',
+      countNouvelle:s.tickets.filter(t=>t.status==='nouvelle').length,
+      countPrepa:s.tickets.filter(t=>t.status==='prepa').length,
+      countPrete:s.tickets.filter(t=>t.status==='prete').length,
+      hasTickets:s.tickets.length>0, noTickets:s.tickets.length===0,
+      tickets,
+      modalOpen: !!cur, closeModal:()=>this.setState({openId:null}),
+      detail: cur ? this.buildTicket(cur, showNotes) : {items:[]},
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+/* ============================================================
+   CHIVI — Webfonts
+   Local brand faces (uploaded) + Google fallbacks.
+   Gilroy is NOT provided; Montserrat is substituted (see readme).
+   ============================================================ */
+
+/* Redgar — the CHIVI display / wordmark / campaign voice.
+   Rough-cut slab display. Used for the logotype and the
+   "LA CUILLÈRE NE MENT JAMAIS" tagline. */
+@font-face {
+  font-family: "Redgar";
+  src: url("../assets/fonts/Redgar.ttf") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Cy Grotesk Grand Dark — ultra-heavy grotesque.
+   The "bissap" lockup and the FCFA price numerals. */
+@font-face {
+  font-family: "Cy Grotesk";
+  src: url("../assets/fonts/CyGrotesk-GrandDark.otf") format("opentype");
+  font-weight: 800 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Boldnova Demo — chunky rounded display used for the "NEW" flash. */
+@font-face {
+  font-family: "Boldnova";
+  src: url("../assets/fonts/Boldnova-Demo.otf") format("opentype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Space Grotesk — product names, body & UI voice (replaces Inter). */
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("../assets/fonts/SpaceGrotesk-Variable.ttf") format("truetype");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Google faces used verbatim by the source file. */
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@600;700;800&display=swap");

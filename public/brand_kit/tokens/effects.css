@@ -1,0 +1,28 @@
+/* ============================================================
+   CHIVI — Effects: shadows, torn edges, textures
+   The brand has almost no soft UI shadow. Its depth comes from
+   hard offset drops behind display type and torn/rough label
+   edges. Textures live in /assets/textures.
+   ============================================================ */
+:root {
+  /* ---- Hard poster drop shadows (offset, no blur) ---- */
+  --shadow-hard: 6px 6px 0 var(--chivi-black);
+  --shadow-hard-maroon: 5px 5px 0 var(--chivi-maroon-deep);
+  --shadow-flash: 3px 4px 0 rgba(10,0,0,0.35);
+
+  /* ---- Soft product-card lift (used sparingly in UI kit) ---- */
+  --shadow-card: 0 18px 40px -18px rgba(10,0,0,0.55);
+  --shadow-float: 0 8px 24px -10px rgba(10,0,0,0.45);
+
+  /* ---- Torn / rough clip paths (hand-cut label look) ---- */
+  --clip-torn-label: polygon(
+    0% 6%, 4% 0%, 22% 5%, 40% 1%, 61% 6%, 80% 1%, 97% 4%, 100% 12%,
+    98% 30%, 100% 52%, 97% 74%, 100% 92%, 94% 100%, 74% 96%, 52% 100%,
+    30% 95%, 10% 100%, 2% 94%, 0% 72%, 3% 50%, 0% 28%
+  ); /* @kind other */
+  --clip-ribbon: polygon(0% 0%, 100% 0%, 92% 50%, 100% 100%, 0% 100%, 8% 50%); /* @kind other */
+
+  /* ---- Texture assets ---- */
+  --texture-red: url("../assets/textures/texture-red.jpg"); /* @kind other */
+  --pattern-chivi: url("../assets/textures/pattern-chivi.jpg"); /* @kind other */
+}

@@ -1,0 +1,50 @@
+/* ============================================================
+   CHIVI — Typography tokens
+   Four voices: Redgar (display), Cy Grotesk (mega/price),
+   Boldnova (flash), Space Grotesk (product + UI). Bebas & Montserrat
+   are supporting condensed / label faces from the source.
+   Sizes below preserve the source's exact display ratios
+   scaled to a usable web scale (source runs 50–223px on print).
+   ============================================================ */
+:root {
+  /* ---- Families ---- */
+  --font-display: "Redgar", "Arial Black", sans-serif;      /* logotype + tagline */
+  --font-mega: "Cy Grotesk", "Arial Black", sans-serif;     /* bissap lockup, prices */
+  --font-flash: "Boldnova", "Cy Grotesk", sans-serif;       /* NEW / promo */
+  --font-product: "Space Grotesk", system-ui, sans-serif;   /* product names, body, UI */
+  --font-condensed: "Bebas Neue", "Space Grotesk", sans-serif; /* volumes, ml, small stats */
+  --font-label: "Montserrat", "Space Grotesk", sans-serif;  /* fine print / legal (Gilroy sub) */
+
+  /* ---- Weights ---- */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-black: 800;
+
+  /* ---- Display scale (poster / packaging) ---- */
+  --size-mega: 8.5rem;       /* 136px — bissap-scale hero lockup */
+  --size-display: 5rem;      /* 80px  — poster headline (product name) */
+  --size-logo: 3.25rem;      /* 52px  — CHIVI wordmark on comms */
+  --size-tagline: 3.5rem;    /* 56px  — LA CUILLÈRE tagline block */
+
+  /* ---- UI / editorial scale ---- */
+  --size-h1: 2.5rem;         /* 40px */
+  --size-h2: 1.875rem;       /* 30px */
+  --size-h3: 1.375rem;       /* 22px */
+  --size-body-lg: 1.125rem;  /* 18px */
+  --size-body: 1rem;         /* 16px */
+  --size-small: 0.8125rem;   /* 13px */
+  --size-fine: 0.6875rem;    /* 11px — Montserrat fine print */
+
+  /* ---- Line heights ---- */
+  --leading-tight: 1;        /* display always sets solid (source = 100%) */
+  --leading-snug: 1.1;
+  --leading-body: 1.5;
+
+  /* ---- Tracking ---- */
+  --tracking-mega: -0.02em;  /* heavy grotesque tightens */
+  --tracking-tagline: 0.01em;
+  --tracking-label: 0.08em;  /* condensed caps open up */
+  --tracking-fine: 0.14em;
+}

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="PWA Client — Commande" description="App mobile client CHIVI : menu, fiche produit, panier, localisation WhatsApp, paiement, suivi de commande." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+  @keyframes chiviSpin { to { transform: rotate(360deg); } }
+  @keyframes chiviPop { from { transform: scale(.96); opacity:.4 } to { transform: scale(1); opacity:1 } }
+</style>
+</helmet>
+
+<div style="min-height:100%;background:#241d1a;display:flex;align-items:center;justify-content:center;padding:28px;font-family:'Space Grotesk',system-ui,sans-serif;">
+  <div style="width:430px;height:900px;background:#FBF3E4;border:13px solid #0A0000;border-radius:46px;box-shadow:0 30px 70px -20px rgba(0,0,0,.7);overflow:hidden;position:relative;display:flex;flex-direction:column;">
+
+    <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:26px;background:#0A0000;border-radius:0 0 18px 18px;z-index:40;"></div>
+
+    <div style="flex:1;overflow-y:auto;position:relative;-webkit-overflow-scrolling:touch;">
+
+      <!-- ---------- SPLASH ---------- -->
+      <sc-if value="{{ isSplash }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Splash" style="position:absolute;inset:0;background:var(--chivi-maroon);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;z-index:30;">
+        <div style="width:220px;background:url('../../assets/logo/chivi-wordmark-gold.png') center/contain no-repeat;height:96px;animation:chiviPop .5s ease both;"></div>
+        <div style="font-family:'Redgar','Arial Black',sans-serif;color:var(--chivi-gold);font-size:15px;letter-spacing:.06em;text-transform:uppercase;text-align:center;max-width:250px;line-height:1.25;">La cuillère ne ment jamais</div>
+        <div style="width:30px;height:30px;border:3px solid rgba(246,188,19,.25);border-top-color:var(--chivi-gold);border-radius:50%;animation:chiviSpin .8s linear infinite;margin-top:6px;"></div>
+      </div>
+      </sc-if>
+
+      <!-- ---------- MENU ---------- -->
+      <sc-if value="{{ isMenu }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Menu">
+        <div style="position:sticky;top:0;z-index:20;background:var(--chivi-maroon);padding:34px 20px 16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="width:112px;height:34px;background:url('../../assets/logo/chivi-wordmark-gold.png') left center/contain no-repeat;"></div>
+            <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border-radius:999px;padding:6px 12px;color:var(--chivi-cream);font-size:12px;font-weight:600;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>
+              Cotonou
+            </div>
+          </div>
+          <sc-if value="{{ heroGreeting }}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top:14px;font-family:'Space Grotesk';font-weight:700;color:#fff;font-size:22px;line-height:1.15;">Bonsoir 👋 <span style="color:var(--chivi-gold);">on mange quoi ?</span></div>
+          </sc-if>
+          <div style="display:flex;gap:9px;margin-top:16px;overflow-x:auto;padding-bottom:2px;">
+            <sc-for list="{{ categories }}" as="cat" hint-placeholder-count="3">
+              <sc-if value="{{ cat.active }}" hint-placeholder-val="{{ false }}"><button onClick="{{ cat.select }}" style="padding:9px 16px;border-radius:999px;border:none;white-space:nowrap;font-weight:700;font-size:13px;cursor:pointer;background:var(--chivi-amber);color:var(--chivi-maroon-deep);">{{ cat.name }}</button></sc-if>
+              <sc-if value="{{ cat.idle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ cat.select }}" style="padding:9px 16px;border-radius:999px;border:none;white-space:nowrap;font-weight:600;font-size:13px;cursor:pointer;background:rgba(255,255,255,.14);color:var(--chivi-cream);">{{ cat.name }}</button></sc-if>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:16px 16px 24px;display:flex;flex-direction:column;gap:14px;">
+          <sc-for list="{{ products }}" as="p" hint-placeholder-count="4">
+            <div onClick="{{ p.open }}" style="background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 14px 30px -20px rgba(10,0,0,.5);cursor:pointer;">
+              <sc-if value="{{ imgCompact }}" hint-placeholder-val="{{ false }}">
+              <div style="height:94px;position:relative;background:repeating-linear-gradient(135deg,#ece0c4 0 14px,#e4d5b3 14px 28px);display:flex;align-items:flex-end;justify-content:flex-start;padding:10px;">
+                <span style="font-family:'Space Grotesk',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#a9986f;background:rgba(255,255,255,.7);padding:3px 7px;border-radius:6px;">photo — {{ p.name }}</span>
+                <sc-if value="{{ p.isNew }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:10px;left:10px;background:var(--chivi-chilli);color:#fff;font-family:'Boldnova','Space Grotesk';font-size:11px;font-weight:800;letter-spacing:.05em;padding:4px 9px;border-radius:6px;transform:rotate(-4deg);">NEW</span></sc-if>
+              </div>
+              </sc-if>
+              <sc-if value="{{ imgComfort }}" hint-placeholder-val="{{ true }}">
+              <div style="height:132px;position:relative;background:repeating-linear-gradient(135deg,#ece0c4 0 14px,#e4d5b3 14px 28px);display:flex;align-items:flex-end;justify-content:flex-start;padding:10px;">
+                <span style="font-family:'Space Grotesk',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#a9986f;background:rgba(255,255,255,.7);padding:3px 7px;border-radius:6px;">photo — {{ p.name }}</span>
+                <sc-if value="{{ p.isNew }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:10px;left:10px;background:var(--chivi-chilli);color:#fff;font-family:'Boldnova','Space Grotesk';font-size:11px;font-weight:800;letter-spacing:.05em;padding:4px 9px;border-radius:6px;transform:rotate(-4deg);">NEW</span></sc-if>
+              </div>
+              </sc-if>
+              <div style="padding:13px 15px 15px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:700;font-size:16px;color:var(--chivi-ink);">{{ p.name }}</div>
+                  <div style="font-size:12.5px;color:#8a7f74;margin-top:3px;line-height:1.35;">{{ p.desc }}</div>
+                  <div style="margin-top:9px;font-size:11px;color:#b0a596;letter-spacing:.04em;text-transform:uppercase;">À partir de</div>
+                  <div style="font-family:'Cy Grotesk','Arial Black';font-size:21px;color:var(--chivi-maroon-deep);line-height:1;">{{ p.priceLabel }}</div>
+                </div>
+                <button onClick="{{ p.open }}" style="flex:none;width:42px;height:42px;border-radius:14px;border:none;background:var(--chivi-amber);color:var(--chivi-maroon-deep);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 14px -6px rgba(246,188,19,.9);">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ---------- PRODUCT DETAIL ---------- -->
+      <sc-if value="{{ isProduct }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Fiche produit">
+        <div style="height:270px;position:relative;background:repeating-linear-gradient(135deg,#ece0c4 0 16px,#e4d5b3 16px 32px);display:flex;align-items:center;justify-content:center;">
+          <span style="font-family:'Space Grotesk',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#a9986f;">photo — {{ product.name }}</span>
+          <button onClick="{{ back }}" style="position:absolute;top:44px;left:16px;width:42px;height:42px;border-radius:50%;border:none;background:rgba(10,0,0,.55);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+        </div>
+
+        <div style="padding:20px 18px 8px;">
+          <div style="font-weight:700;font-size:24px;color:var(--chivi-ink);">{{ product.name }}</div>
+          <div style="font-family:'Cy Grotesk','Arial Black';font-size:26px;color:var(--chivi-maroon-deep);margin-top:4px;line-height:1;">{{ product.priceLabel }}</div>
+          <div style="font-size:14px;color:#7c7166;margin-top:12px;line-height:1.5;">{{ product.desc }}</div>
+        </div>
+
+        <sc-if value="{{ product.hasVariants }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:14px 18px 0;">
+          <div style="font-family:'Redgar','Arial Black';font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--chivi-maroon);">Choisis ta protéine</div>
+          <div style="display:flex;gap:9px;margin-top:11px;flex-wrap:wrap;">
+            <sc-for list="{{ variants }}" as="v" hint-placeholder-count="3">
+              <sc-if value="{{ v.active }}" hint-placeholder-val="{{ false }}"><button onClick="{{ v.select }}" style="padding:11px 16px;border-radius:13px;border:2px solid var(--chivi-maroon);background:var(--chivi-maroon);color:var(--chivi-gold);font-weight:700;font-size:14px;cursor:pointer;">{{ v.name }}</button></sc-if>
+              <sc-if value="{{ v.idle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ v.select }}" style="padding:11px 16px;border-radius:13px;border:2px solid #e6dcc4;background:#fff;color:var(--chivi-ink);font-weight:600;font-size:14px;cursor:pointer;">{{ v.name }}</button></sc-if>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="padding:18px 18px 0;">
+          <div style="font-family:'Redgar','Arial Black';font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--chivi-maroon);">Taille</div>
+          <div style="display:flex;gap:9px;margin-top:11px;">
+            <sc-for list="{{ sizes }}" as="sz" hint-placeholder-count="2">
+              <sc-if value="{{ sz.active }}" hint-placeholder-val="{{ false }}"><button onClick="{{ sz.select }}" style="padding:11px 16px;border-radius:13px;border:2px solid var(--chivi-maroon);background:var(--chivi-maroon);color:var(--chivi-gold);font-weight:700;font-size:14px;cursor:pointer;">{{ sz.label }}</button></sc-if>
+              <sc-if value="{{ sz.idle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ sz.select }}" style="padding:11px 16px;border-radius:13px;border:2px solid #e6dcc4;background:#fff;color:var(--chivi-ink);font-weight:600;font-size:14px;cursor:pointer;">{{ sz.label }}</button></sc-if>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:18px 18px 0;">
+          <div style="font-family:'Redgar','Arial Black';font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--chivi-maroon);">Suppléments</div>
+          <div style="margin-top:11px;display:flex;flex-direction:column;gap:9px;">
+            <sc-for list="{{ supps }}" as="sp" hint-placeholder-count="3">
+              <sc-if value="{{ sp.on }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ sp.toggle }}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;border-radius:15px;border:2px solid var(--chivi-maroon);background:#fff6e5;cursor:pointer;text-align:left;">
+                <span style="display:flex;align-items:center;gap:11px;">
+                  <span style="width:22px;height:22px;border-radius:7px;border:2px solid var(--chivi-maroon);background:var(--chivi-maroon);display:flex;align-items:center;justify-content:center;color:#fff;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6L9 17l-5-5"/></svg>
+                  </span>
+                  <span style="font-weight:600;font-size:14.5px;color:var(--chivi-ink);">{{ sp.name }}</span>
+                </span>
+                <span style="font-family:'Cy Grotesk','Arial Black';font-size:15px;color:var(--chivi-maroon-deep);">+{{ sp.priceLabel }}</span>
+              </button>
+              </sc-if>
+              <sc-if value="{{ sp.off }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ sp.toggle }}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;border-radius:15px;border:2px solid #e6dcc4;background:#fff;cursor:pointer;text-align:left;">
+                <span style="display:flex;align-items:center;gap:11px;">
+                  <span style="width:22px;height:22px;border-radius:7px;border:2px solid #e6dcc4;background:transparent;display:flex;align-items:center;justify-content:center;color:#fff;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><path d="M20 6L9 17l-5-5"/></svg>
+                  </span>
+                  <span style="font-weight:600;font-size:14.5px;color:var(--chivi-ink);">{{ sp.name }}</span>
+                </span>
+                <span style="font-family:'Cy Grotesk','Arial Black';font-size:15px;color:var(--chivi-maroon-deep);">+{{ sp.priceLabel }}</span>
+              </button>
+              </sc-if>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:20px 18px 0;display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-family:'Redgar','Arial Black';font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--chivi-maroon);">Quantité</span>
+          <div style="display:flex;align-items:center;gap:16px;">
+            <button onClick="{{ dec }}" style="width:42px;height:42px;border-radius:13px;border:2px solid #e2d6bd;background:#fff;color:var(--chivi-maroon);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><path d="M5 12h14"/></svg>
+            </button>
+            <span style="font-family:'Cy Grotesk','Arial Black';font-size:22px;color:var(--chivi-ink);min-width:24px;text-align:center;">{{ qty }}</span>
+            <button onClick="{{ inc }}" style="width:42px;height:42px;border-radius:13px;border:none;background:var(--chivi-amber);color:var(--chivi-maroon-deep);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div style="height:26px;"></div>
+        <div style="position:sticky;bottom:0;background:linear-gradient(180deg,rgba(251,243,228,0),#FBF3E4 22%);padding:14px 16px 18px;">
+          <button onClick="{{ addToCart }}" style="width:100%;padding:17px;border:none;border-radius:18px;background:var(--chivi-maroon);color:var(--chivi-gold);font-family:'Space Grotesk';font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;box-shadow:var(--shadow-hard-maroon);">
+            <span>Ajouter au panier</span>
+            <span style="font-family:'Cy Grotesk','Arial Black';">{{ product.totalLabel }}</span>
+          </button>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ---------- CART ---------- -->
+      <sc-if value="{{ isCart }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Panier">
+        <div style="position:sticky;top:0;z-index:10;background:var(--chivi-maroon);padding:38px 20px 16px;display:flex;align-items:center;gap:12px;">
+          <button onClick="{{ goMenu }}" style="width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div style="font-family:'Redgar','Arial Black';color:var(--chivi-gold);font-size:22px;letter-spacing:.03em;text-transform:uppercase;">Mon panier</div>
+        </div>
+
+        <sc-if value="{{ cartEmpty }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:80px 30px;text-align:center;color:#a9987f;">
+          <div style="font-family:'Cy Grotesk','Arial Black';font-size:20px;color:var(--chivi-maroon);">Panier vide</div>
+          <div style="font-size:14px;margin-top:8px;">Ajoute un plat depuis le menu.</div>
+          <button onClick="{{ goMenu }}" style="margin-top:20px;padding:13px 22px;border:none;border-radius:999px;background:var(--chivi-amber);color:var(--chivi-maroon-deep);font-weight:700;cursor:pointer;">Voir le menu</button>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ cartHasItems }}" hint-placeholder-val="{{ false }}">
+        <div>
+          <div style="padding:14px 16px 6px;display:flex;flex-direction:column;gap:11px;">
+            <sc-for list="{{ cartLines }}" as="line" hint-placeholder-count="2">
+              <div style="background:#fff;border-radius:18px;padding:13px;display:flex;gap:12px;box-shadow:0 12px 26px -20px rgba(10,0,0,.5);">
+                <div style="width:66px;height:66px;flex:none;border-radius:13px;background:repeating-linear-gradient(135deg,#ece0c4 0 10px,#e4d5b3 10px 20px);"></div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:700;font-size:15px;color:var(--chivi-ink);">{{ line.name }}</div>
+                  <div style="font-size:12px;color:#9a8f82;margin-top:2px;">{{ line.detail }}</div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                      <button onClick="{{ line.dec }}" style="width:30px;height:30px;border-radius:9px;border:2px solid #e2d6bd;background:#fff;color:var(--chivi-maroon);cursor:pointer;font-size:16px;line-height:1;">−</button>
+                      <span style="font-weight:700;min-width:16px;text-align:center;">{{ line.qty }}</span>
+                      <button onClick="{{ line.inc }}" style="width:30px;height:30px;border-radius:9px;border:none;background:var(--chivi-amber);color:var(--chivi-maroon-deep);cursor:pointer;font-size:16px;line-height:1;">+</button>
+                    </div>
+                    <span style="font-family:'Cy Grotesk','Arial Black';font-size:16px;color:var(--chivi-maroon-deep);">{{ line.totalLabel }}</span>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin:12px 16px 0;background:#fff;border-radius:18px;padding:16px;">
+            <div style="display:flex;justify-content:space-between;font-size:14px;color:#6d6358;padding:5px 0;"><span>Sous-total</span><span>{{ subtotalLabel }}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:14px;color:#6d6358;padding:5px 0;"><span>Frais de livraison</span><span>{{ deliveryLabel }}</span></div>
+            <div style="height:1px;background:#efe6d3;margin:8px 0;"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;">
+              <span style="font-weight:700;color:var(--chivi-ink);">Total</span>
+              <span style="font-family:'Cy Grotesk','Arial Black';font-size:22px;color:var(--chivi-maroon-deep);">{{ totalLabel }}</span>
+            </div>
+          </div>
+
+          <div style="height:14px;"></div>
+          <div style="position:sticky;bottom:0;background:linear-gradient(180deg,rgba(251,243,228,0),#FBF3E4 22%);padding:12px 16px 18px;">
+            <button onClick="{{ goLocation }}" style="width:100%;padding:17px;border:none;border-radius:18px;background:var(--chivi-maroon);color:var(--chivi-gold);font-weight:700;font-size:16px;cursor:pointer;box-shadow:var(--shadow-hard-maroon);">Commander →</button>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <!-- ---------- LOCATION ---------- -->
+      <sc-if value="{{ isLocation }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Localisation">
+        <div style="position:sticky;top:0;z-index:10;background:var(--chivi-maroon);padding:38px 20px 16px;display:flex;align-items:center;gap:12px;">
+          <button onClick="{{ goCart }}" style="width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div style="font-family:'Redgar','Arial Black';color:var(--chivi-gold);font-size:20px;text-transform:uppercase;">Où livrer ?</div>
+        </div>
+        <div style="height:230px;position:relative;background:repeating-linear-gradient(135deg,#dfe6dc 0 16px,#d5ddd1 16px 32px);display:flex;align-items:center;justify-content:center;">
+          <span style="font-family:'Space Grotesk',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#8a9686;">carte — position</span>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-100%);color:var(--chivi-chilli);">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="var(--chivi-chilli)" stroke="#fff" stroke-width="1.5"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5" fill="#fff"/></svg>
+          </div>
+        </div>
+        <div style="padding:18px;display:flex;flex-direction:column;gap:14px;">
+          <button style="width:100%;padding:15px;border:none;border-radius:15px;background:var(--chivi-amber);color:var(--chivi-maroon-deep);font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>
+            Partager ma position GPS
+          </button>
+          <div>
+            <div style="font-size:12px;color:#8a7f74;letter-spacing:.04em;text-transform:uppercase;margin-bottom:7px;">Indication (repère, immeuble…)</div>
+            <textarea placeholder="Ex : Carré 245, maison bleue à côté de la pharmacie Saint-Michel, Fidjrossè." style="width:100%;box-sizing:border-box;min-height:88px;resize:none;border:2px solid #e6dcc4;border-radius:15px;padding:13px;font-family:'Space Grotesk';font-size:14px;color:var(--chivi-ink);background:#fff;"></textarea>
+          </div>
+          <div style="background:#fff;border-radius:15px;padding:14px;display:flex;gap:11px;align-items:center;">
+            <div style="width:44px;height:44px;flex:none;border-radius:12px;background:#25D366;display:flex;align-items:center;justify-content:center;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8s.7-2 .9-2.2c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5.2.5.7 1.8.8 1.9.1.1.1.3 0 .5-.1.2-.2.4-.3.5l-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.3-.2.6-.1l1.7.8c.3.2.5.2.5.4.1.1.1.7-.1 1.2z"/></svg>
+            </div>
+            <div style="flex:1;font-size:13px;color:#6d6358;line-height:1.4;">Tu confirmes ta commande et ta position sur <b style="color:var(--chivi-ink);">WhatsApp</b> — comme d'habitude.</div>
+          </div>
+          <button onClick="{{ goPayment }}" style="width:100%;padding:17px;border:none;border-radius:18px;background:var(--chivi-maroon);color:var(--chivi-gold);font-weight:700;font-size:16px;cursor:pointer;box-shadow:var(--shadow-hard-maroon);">Continuer vers le paiement</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ---------- PAYMENT ---------- -->
+      <sc-if value="{{ isPayment }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Paiement">
+        <div style="position:sticky;top:0;z-index:10;background:var(--chivi-maroon);padding:38px 20px 16px;display:flex;align-items:center;gap:12px;">
+          <button onClick="{{ goLocation }}" style="width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div style="font-family:'Redgar','Arial Black';color:var(--chivi-gold);font-size:20px;text-transform:uppercase;">Paiement</div>
+        </div>
+        <div style="padding:18px;display:flex;flex-direction:column;gap:12px;">
+          <sc-for list="{{ payments }}" as="pm" hint-placeholder-count="3">
+            <sc-if value="{{ pm.on }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ pm.select }}" style="display:flex;align-items:center;gap:13px;padding:16px;border-radius:17px;border:2px solid var(--chivi-maroon);background:#fff6e5;cursor:pointer;text-align:left;">
+              <span style="width:44px;height:44px;flex:none;border-radius:12px;background:var(--chivi-maroon);display:flex;align-items:center;justify-content:center;color:var(--chivi-gold);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>
+              </span>
+              <span style="flex:1;">
+                <span style="display:block;font-weight:700;font-size:15px;color:var(--chivi-ink);">{{ pm.name }}</span>
+                <span style="display:block;font-size:12.5px;color:#8a7f74;margin-top:2px;">{{ pm.desc }}</span>
+              </span>
+              <span style="width:22px;height:22px;flex:none;border-radius:50%;border:2px solid var(--chivi-maroon);background:var(--chivi-maroon);"></span>
+            </button>
+            </sc-if>
+            <sc-if value="{{ pm.off }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ pm.select }}" style="display:flex;align-items:center;gap:13px;padding:16px;border-radius:17px;border:2px solid #eadfca;background:#fff;cursor:pointer;text-align:left;">
+              <span style="width:44px;height:44px;flex:none;border-radius:12px;background:#f4ead2;display:flex;align-items:center;justify-content:center;color:#b0a596;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>
+              </span>
+              <span style="flex:1;">
+                <span style="display:block;font-weight:700;font-size:15px;color:var(--chivi-ink);">{{ pm.name }}</span>
+                <span style="display:block;font-size:12.5px;color:#8a7f74;margin-top:2px;">{{ pm.desc }}</span>
+              </span>
+              <span style="width:22px;height:22px;flex:none;border-radius:50%;border:2px solid #eadfca;background:transparent;"></span>
+            </button>
+            </sc-if>
+          </sc-for>
+          <div style="margin-top:6px;background:#fff;border-radius:15px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:700;color:var(--chivi-ink);">Total à payer</span>
+            <span style="font-family:'Cy Grotesk','Arial Black';font-size:22px;color:var(--chivi-maroon-deep);">{{ totalLabel }}</span>
+          </div>
+          <button onClick="{{ placeOrder }}" style="width:100%;margin-top:6px;padding:17px;border:none;border-radius:18px;background:#25D366;color:#053d1c;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.3A10 10 0 1 0 12 2z"/></svg>
+            Confirmer sur WhatsApp
+          </button>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ---------- CONFIRMATION ---------- -->
+      <sc-if value="{{ isConfirm }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Confirmation">
+        <div style="background:var(--chivi-maroon);padding:46px 20px 30px;text-align:center;">
+          <div style="width:72px;height:72px;margin:0 auto;border-radius:50%;background:var(--chivi-amber);display:flex;align-items:center;justify-content:center;color:var(--chivi-maroon-deep);">
+            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <div style="font-family:'Redgar','Arial Black';color:var(--chivi-gold);font-size:24px;text-transform:uppercase;margin-top:16px;">Commande reçue !</div>
+          <div style="color:var(--chivi-cream);font-size:14px;margin-top:6px;">Commande <b>{{ orderNumber }}</b> · suivi en temps réel</div>
+        </div>
+        <div style="padding:24px 20px;">
+          <sc-for list="{{ statusSteps }}" as="st" hint-placeholder-count="4">
+            <div style="display:flex;gap:14px;">
+              <div style="display:flex;flex-direction:column;align-items:center;">
+                <sc-if value="{{ st.reached }}" hint-placeholder-val="{{ true }}"><div style="width:34px;height:34px;border-radius:50%;background:var(--chivi-amber);border:2px solid var(--chivi-amber);color:#780003;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">{{ st.n }}</div></sc-if>
+                <sc-if value="{{ st.future }}" hint-placeholder-val="{{ false }}"><div style="width:34px;height:34px;border-radius:50%;background:#fff;border:2px solid #e2d6bd;color:#b9ad9c;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">{{ st.n }}</div></sc-if>
+                <sc-if value="{{ st.passed }}" hint-placeholder-val="{{ false }}"><div style="width:2px;flex:1;min-height:26px;background:var(--chivi-amber);"></div></sc-if>
+                <sc-if value="{{ st.notPassed }}" hint-placeholder-val="{{ true }}"><div style="width:2px;flex:1;min-height:26px;background:#eadfca;"></div></sc-if>
+              </div>
+              <div style="padding-bottom:20px;">
+                <sc-if value="{{ st.reached }}" hint-placeholder-val="{{ true }}"><div style="font-weight:700;font-size:15px;color:var(--chivi-ink);">{{ st.name }}</div></sc-if>
+                <sc-if value="{{ st.future }}" hint-placeholder-val="{{ false }}"><div style="font-weight:700;font-size:15px;color:#b0a596;">{{ st.name }}</div></sc-if>
+                <div style="font-size:12.5px;color:#9a8f82;margin-top:2px;">{{ st.time }}</div>
+              </div>
+            </div>
+          </sc-for>
+          <div style="background:#fff;border-radius:16px;padding:15px;margin-top:4px;">
+            <div style="font-size:12px;color:#9a8f82;letter-spacing:.04em;text-transform:uppercase;">Récapitulatif</div>
+            <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px;">
+              <sc-for list="{{ cartLines }}" as="line" hint-placeholder-count="2">
+                <div style="display:flex;justify-content:space-between;font-size:13.5px;color:#6d6358;"><span>{{ line.qty }}× {{ line.name }}</span><span>{{ line.totalLabel }}</span></div>
+              </sc-for>
+            </div>
+            <div style="height:1px;background:#efe6d3;margin:10px 0;"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:700;color:var(--chivi-ink);">Total</span><span style="font-family:'Cy Grotesk','Arial Black';font-size:19px;color:var(--chivi-maroon-deep);">{{ totalLabel }}</span></div>
+          </div>
+          <button onClick="{{ advanceStatus }}" style="width:100%;margin-top:16px;padding:14px;border:2px solid var(--chivi-amber);border-radius:15px;background:transparent;color:var(--chivi-maroon);font-weight:700;cursor:pointer;">Simuler l'étape suivante ▸</button>
+          <button onClick="{{ goMenu }}" style="width:100%;margin-top:10px;padding:14px;border:none;border-radius:15px;background:var(--chivi-maroon);color:var(--chivi-gold);font-weight:700;cursor:pointer;">Nouvelle commande</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ---------- HISTORY ---------- -->
+      <sc-if value="{{ isHistory }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Historique">
+        <div style="position:sticky;top:0;z-index:10;background:var(--chivi-maroon);padding:38px 20px 16px;">
+          <div style="font-family:'Redgar','Arial Black';color:var(--chivi-gold);font-size:22px;text-transform:uppercase;">Mes commandes</div>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:11px;">
+          <sc-for list="{{ history }}" as="h" hint-placeholder-count="4">
+            <div style="background:#fff;border-radius:16px;padding:15px;box-shadow:0 12px 26px -22px rgba(10,0,0,.5);">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <div style="font-weight:700;font-size:15px;color:var(--chivi-ink);">{{ h.number }}</div>
+                  <div style="font-size:12.5px;color:#9a8f82;margin-top:2px;">{{ h.date }} · {{ h.items }}</div>
+                </div>
+                <sc-if value="{{ h.delivered }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;font-weight:700;letter-spacing:.03em;padding:5px 10px;border-radius:999px;background:#e7f6ec;color:#1b7a44;">{{ h.status }}</span></sc-if>
+                <sc-if value="{{ h.cancelled }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;letter-spacing:.03em;padding:5px 10px;border-radius:999px;background:#fbe8e6;color:#c0392b;">{{ h.status }}</span></sc-if>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px;">
+                <span style="font-family:'Cy Grotesk','Arial Black';font-size:18px;color:var(--chivi-maroon-deep);">{{ h.total }}</span>
+                <button style="font-size:13px;font-weight:600;color:var(--chivi-maroon);background:none;border:none;cursor:pointer;">Recommander ↻</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+
+    <!-- ============ BOTTOM NAV ============ -->
+    <sc-if value="{{ showNav }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:none;background:#fff;border-top:1px solid #efe6d3;display:flex;padding:9px 8px 14px;">
+      <sc-if value="{{ menuActive }}" hint-placeholder-val="{{ true }}"><button onClick="{{ goMenu }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--chivi-maroon);"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span style="font-size:10.5px;font-weight:600;letter-spacing:.02em;">Menu</span></button></sc-if>
+      <sc-if value="{{ menuIdle }}" hint-placeholder-val="{{ false }}"><button onClick="{{ goMenu }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;color:#b3a794;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span style="font-size:10.5px;font-weight:600;letter-spacing:.02em;">Menu</span></button></sc-if>
+
+      <button onClick="{{ goCart }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;">
+        <span style="position:relative;display:inline-flex;">
+          <sc-if value="{{ cartActive }}" hint-placeholder-val="{{ false }}"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="var(--chivi-maroon)" stroke-width="2"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></sc-if>
+          <sc-if value="{{ cartIdle }}" hint-placeholder-val="{{ true }}"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#b3a794" stroke-width="2"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></sc-if>
+          <sc-if value="{{ cartHasItems }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-6px;right:-9px;background:var(--chivi-chilli);color:#fff;font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 4px;">{{ cartCount }}</span></sc-if>
+        </span>
+        <sc-if value="{{ cartActive }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:600;letter-spacing:.02em;color:var(--chivi-maroon);">Panier</span></sc-if>
+        <sc-if value="{{ cartIdle }}" hint-placeholder-val="{{ true }}"><span style="font-size:10.5px;font-weight:600;letter-spacing:.02em;color:#b3a794;">Panier</span></sc-if>
+      </button>
+
+      <sc-if value="{{ historyActive }}" hint-placeholder-val="{{ false }}"><button onClick="{{ goHistory }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--chivi-maroon);"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6"/></svg><span style="font-size:10.5px;font-weight:600;letter-spacing:.02em;">Commandes</span></button></sc-if>
+      <sc-if value="{{ historyIdle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ goHistory }}" style="flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;color:#b3a794;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 8h6M9 12h6"/></svg><span style="font-size:10.5px;font-weight:600;letter-spacing:.02em;">Commandes</span></button></sc-if>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:486,&quot;height&quot;:956},&quot;heroGreeting&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Accueil&quot;,&quot;label&quot;:&quot;Message d'accueil&quot;},&quot;menuDensity&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Confortable&quot;,&quot;Compact&quot;],&quot;default&quot;:&quot;Confortable&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Menu&quot;,&quot;label&quot;:&quot;Densité des cartes&quot;},&quot;newBadges&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Menu&quot;,&quot;label&quot;:&quot;Badges NEW&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'splash', category: 'Plats CHIVI', selectedId: 'haricot',
+    variant: 'Gésier', size: 'Normal', supps: [], qty: 1,
+    cart: [], payment: 'cash', statusStep: 0,
+  };
+
+  MENU = [
+    { id:'poulet',  cat:'Plats CHIVI', name:'Poulet CHIVI braisé', desc:'Poulet mariné, braisé au feu de bois, sauce maison piquante.', base:2500, isNew:true },
+    { id:'riz',     cat:'Plats CHIVI', name:'Riz CHIVI complet', desc:'Riz sauté, légumes, œuf et protéine au choix.', base:2000 },
+    { id:'poisson', cat:'Plats CHIVI', name:'Poisson braisé CHIVI', desc:'Tilapia entier braisé, piment vert, gari.', base:3000 },
+    { id:'haricot', cat:'Plats Traditionnels', name:'Haricot au gari', desc:'Haricot mijoté, gari croustillant. Au gésier, poisson ou viande.', base:1000, variants:['Gésier','Poisson','Viande'] },
+    { id:'akassa',  cat:'Plats Traditionnels', name:'Akassa poisson', desc:'Pâte de maïs fermentée, poisson en sauce tomate.', base:1500 },
+    { id:'amiwo',   cat:'Plats Traditionnels', name:'Amiwo poulet', desc:'Pâte rouge épicée, poulet grillé, sauce.', base:2000 },
+    { id:'bissap',  cat:'Boissons', name:'Jus de Bissap 250ml', desc:'Hibiscus infusé, frais et légèrement sucré.', base:500 },
+    { id:'gingembre', cat:'Boissons', name:'Jus de Gingembre 250ml', desc:'Gingembre frais pressé, bien relevé.', base:500 },
+    { id:'eau',     cat:'Boissons', name:'Eau minérale', desc:'Bouteille 50cl, bien fraîche.', base:300 },
+  ];
+  SUPPS = [ { id:'frites', name:'Frites', price:500 }, { id:'alloco', name:'Alloco (banane plantain)', price:500 }, { id:'akassa', name:'Akassa', price:300 } ];
+  CATS = ['Plats CHIVI','Plats Traditionnels','Boissons'];
+  PAYMENTS = [
+    { id:'cash', name:'Cash à la livraison', desc:'Tu paies en espèces au livreur.' },
+    { id:'momo_delivery', name:'Mobile Money à la livraison', desc:'MTN / Moov MoMo à la réception.' },
+    { id:'momo_advance', name:'Paiement en avance (MoMo)', desc:'Tu règles maintenant, livraison prioritaire.' },
+  ];
+  STATUS = ['Reçue','En préparation','En route','Livrée'];
+  DELIVERY = 500;
+
+  componentDidMount(){ this._t = setTimeout(()=>{ if(this.state.screen==='splash') this.setState({screen:'menu'}); }, 1500); }
+  componentWillUnmount(){ clearTimeout(this._t); }
+
+  fmt(n){ return Math.round(n).toLocaleString('fr-FR').replace(/\u202f/g,' ') + ' FCFA'; }
+  go(screen){ this.setState({ screen }); }
+  product(){ return this.MENU.find(p=>p.id===this.state.selectedId) || this.MENU[3]; }
+  unitPrice(){ const p=this.product(); let t=p.base; if(this.state.size==='Grand') t+=500; this.state.supps.forEach(id=>{ const s=this.SUPPS.find(x=>x.id===id); if(s) t+=s.price; }); return t; }
+  lineTotal(it){ return it.unit * it.qty; }
+  cartTotal(){ return this.state.cart.reduce((s,it)=>s+this.lineTotal(it),0); }
+
+  openProduct(p){ this.setState({ selectedId:p.id, screen:'product', variant:(p.variants&&p.variants[0])||'Gésier', size:'Normal', supps:[], qty:1 }); }
+  addToCart(){
+    const p=this.product();
+    const detailParts=[]; if(p.variants) detailParts.push(this.state.variant); detailParts.push(this.state.size);
+    this.state.supps.forEach(id=>{ const s=this.SUPPS.find(x=>x.id===id); if(s) detailParts.push(s.name.split(' ')[0]); });
+    const line={ key:Date.now()+''+Math.random(), name:p.name, detail:detailParts.join(' · '), unit:this.unitPrice(), qty:this.state.qty };
+    this.setState({ cart:[...this.state.cart, line], screen:'cart' });
+  }
+  cartInc(k){ this.setState({ cart:this.state.cart.map(l=>l.key===k?{...l,qty:l.qty+1}:l) }); }
+  cartDec(k){ this.setState({ cart:this.state.cart.map(l=>l.key===k?{...l,qty:Math.max(1,l.qty-1)}:l) }); }
+  placeOrder(){ this.setState({ screen:'confirm', statusStep:0 }); }
+  advanceStatus(){ this.setState({ statusStep: Math.min(3, this.state.statusStep+1) }); }
+
+  renderVals(){
+    const s=this.state;
+    const p=this.product();
+    const heroGreeting=this.props.heroGreeting??true;
+    const newBadges=this.props.newBadges??true;
+    const compact=this.props.menuDensity==='Compact';
+    const cartCount=s.cart.reduce((n,l)=>n+l.qty,0);
+    const total=this.cartTotal();
+    const activeTab = (s.screen==='cart'||s.screen==='location'||s.screen==='payment'||s.screen==='confirm') ? 'cart' : (s.screen==='history'?'history':'menu');
+
+    const statusSteps=this.STATUS.map((name,i)=>{
+      const reached=i<=s.statusStep, passed=i<s.statusStep;
+      return { n:i+1, name, reached, future:!reached, passed, notPassed:!passed,
+        time: (i<s.statusStep)?'Terminé':(i===s.statusStep?'En cours…':'À venir') };
+    });
+
+    return {
+      isSplash:s.screen==='splash', isMenu:s.screen==='menu', isProduct:s.screen==='product',
+      isCart:s.screen==='cart', isLocation:s.screen==='location', isPayment:s.screen==='payment',
+      isConfirm:s.screen==='confirm', isHistory:s.screen==='history',
+      showNav: ['menu','cart','history'].includes(s.screen),
+      back:()=>this.go('menu'), goMenu:()=>this.go('menu'), goCart:()=>this.go('cart'),
+      goLocation:()=>this.go('location'), goPayment:()=>this.go('payment'), goHistory:()=>this.go('history'),
+
+      heroGreeting, imgCompact:compact, imgComfort:!compact,
+      categories: this.CATS.map(name=>({ name, select:()=>this.setState({category:name}), active: s.category===name, idle: s.category!==name })),
+      products: this.MENU.filter(x=>x.cat===s.category).map(x=>({ ...x, priceLabel:this.fmt(x.base), isNew:!!x.isNew&&newBadges, open:()=>this.openProduct(x) })),
+
+      product:{ name:p.name, desc:p.desc, hasVariants:!!p.variants, priceLabel:this.fmt(p.base), totalLabel:this.fmt(this.unitPrice()*s.qty) },
+      variants: (p.variants||[]).map(v=>({ name:v, select:()=>this.setState({variant:v}), active: s.variant===v, idle: s.variant!==v })),
+      sizes: [{k:'Normal',label:'Normal'},{k:'Grand',label:'Grand +500'}].map(o=>({ label:o.label, select:()=>this.setState({size:o.k}), active: s.size===o.k, idle: s.size!==o.k })),
+      supps: this.SUPPS.map(x=>{ const on=s.supps.includes(x.id); return { name:x.name, priceLabel:this.fmt(x.price),
+        toggle:()=>this.setState({ supps: on? s.supps.filter(i=>i!==x.id):[...s.supps,x.id] }), on, off:!on }; }),
+      qty:s.qty, inc:()=>this.setState({qty:s.qty+1}), dec:()=>this.setState({qty:Math.max(1,s.qty-1)}),
+      addToCart:()=>this.addToCart(),
+
+      cartEmpty: s.cart.length===0, cartHasItems: s.cart.length>0,
+      cartLines: s.cart.map(l=>({ name:l.name, detail:l.detail, qty:l.qty, totalLabel:this.fmt(this.lineTotal(l)),
+        inc:()=>this.cartInc(l.key), dec:()=>this.cartDec(l.key) })),
+      subtotalLabel:this.fmt(total), deliveryLabel:this.fmt(this.DELIVERY), totalLabel:this.fmt(total+this.DELIVERY),
+
+      payments: this.PAYMENTS.map(pm=>{ const on=s.payment===pm.id; return { name:pm.name, desc:pm.desc, select:()=>this.setState({payment:pm.id}), on, off:!on }; }),
+      placeOrder:()=>this.placeOrder(),
+
+      orderNumber:'#CHV-2048', statusSteps, advanceStatus:()=>this.advanceStatus(),
+
+      cartCount,
+      menuActive: activeTab==='menu', menuIdle: activeTab!=='menu',
+      cartActive: activeTab==='cart', cartIdle: activeTab!=='cart',
+      historyActive: activeTab==='history', historyIdle: activeTab!=='history',
+
+      history: [
+        { number:'#CHV-2041', date:'Aujourd\'hui 19:42', items:'2 articles', status:'Livrée', total:this.fmt(3500), delivered:true, cancelled:false },
+        { number:'#CHV-2039', date:'Hier 13:10', items:'3 articles', status:'Livrée', total:this.fmt(4500), delivered:true, cancelled:false },
+        { number:'#CHV-2030', date:'2 juil. 20:05', items:'1 article', status:'Annulée', total:this.fmt(1000), delivered:false, cancelled:true },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
