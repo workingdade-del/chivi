@@ -6,12 +6,18 @@ import {
   DELIVERY_DONE_BUTTON_PREFIX,
   buildPauseAutoReply,
   buildPostDeliveryFeedbackMessage,
+  buildDeliveryFeeMessage,
+  buildDeliveryFeePendingMessage,
+  buildDriverQuoteRequestMessage,
+  buildDeliveryFeeConfirmedMessage,
+  downloadWhatsappMedia,
   normalizePhone,
   sendWhatsappText,
 } from "@/lib/whatsapp";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
-import { generateGroqReply, type ChatTurn } from "@/lib/groq";
+import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
+import { KITCHEN_ORIGIN, haversineKm, computeDeliveryFee } from "@/lib/distance";
 
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
@@ -50,6 +56,8 @@ interface WhatsappMessage {
   from: string;
   type: string;
   text?: { body: string };
+  audio?: { id: string; mime_type?: string };
+  location?: { latitude: number; longitude: number };
   interactive?: {
     type: string;
     button_reply?: { id: string; title: string };
@@ -177,10 +185,107 @@ async function handleDeliveryConfirmed(driver: { id: string; name: string }, ord
 }
 
 /**
+ * Un client partage sa position WhatsApp : on calcule la distance depuis
+ * la cuisine (Godomey Nonhouenou) et on applique la grille tarifaire. Au-
+ * delà de 15km, pas de devinette : on prévient le client qu'on vérifie,
+ * et on demande confirmation du tarif à un livreur disponible.
+ */
+async function handleCustomerLocation(profileId: string, phone: string, lat: number, lng: number) {
+  const supabase = createServiceClient();
+  const distanceKm = haversineKm(KITCHEN_ORIGIN.lat, KITCHEN_ORIGIN.lng, lat, lng);
+  const { fee, needsConfirmation } = computeDeliveryFee(distanceKm);
+
+  await supabase.from("profiles").update({ delivery_lat: lat, delivery_lng: lng }).eq("id", profileId);
+
+  if (!needsConfirmation && fee !== null) {
+    try {
+      await sendWhatsappText(phone, buildDeliveryFeeMessage(distanceKm, fee));
+    } catch (err) {
+      console.error("[whatsapp-webhook] failed to send delivery fee message", err);
+    }
+    return;
+  }
+
+  try {
+    await sendWhatsappText(phone, buildDeliveryFeePendingMessage());
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to send delivery fee pending message", err);
+  }
+
+  const { data: drivers } = await supabase
+    .from("drivers")
+    .select("id, name, phone")
+    .eq("is_active", true)
+    .eq("is_available", true)
+    .eq("status", "libre");
+
+  const driver = drivers?.[0];
+  if (!driver) {
+    console.warn("[whatsapp-webhook] no available driver to confirm out-of-range delivery quote", { phone, distanceKm });
+    return;
+  }
+
+  await supabase.from("pending_delivery_quotes").insert({
+    profile_id: profileId,
+    phone,
+    distance_km: distanceKm,
+    driver_id: driver.id,
+  });
+
+  try {
+    await sendWhatsappText(driver.phone, buildDriverQuoteRequestMessage(distanceKm));
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to send driver quote request", err);
+  }
+}
+
+/**
+ * Un livreur répond à une demande de confirmation de tarif par un simple
+ * montant en texte libre (ex : "1500"). On prend la plus ancienne demande
+ * en attente qui lui est assignée. Retourne false si ce n'était pas ça
+ * (le texte tombe alors dans la logique de disponibilité classique).
+ */
+async function handleDriverQuoteReply(driver: { id: string; name: string }, driverPhone: string, rawText: string): Promise<boolean> {
+  const trimmed = rawText.trim();
+  if (!/^\d+([.,]\d+)?\s*(fcfa)?$/i.test(trimmed)) return false;
+
+  const amount = parseFloat(trimmed.replace(",", ".").replace(/[^\d.]/g, ""));
+  if (Number.isNaN(amount) || amount <= 0) return false;
+
+  const supabase = createServiceClient();
+  const { data: quote } = await supabase
+    .from("pending_delivery_quotes")
+    .select("id, phone")
+    .eq("driver_id", driver.id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!quote) return false;
+
+  await supabase.from("pending_delivery_quotes").update({ status: "confirmed", quoted_fee: amount }).eq("id", quote.id);
+
+  try {
+    await sendWhatsappText(quote.phone, buildDeliveryFeeConfirmedMessage(amount));
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to send confirmed fee to customer", err);
+  }
+  try {
+    await sendWhatsappText(driverPhone, `Merci ${driver.name}, tarif de ${amount.toLocaleString("fr-FR")} FCFA transmis au client ✅.`);
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to send quote ack to driver", err);
+  }
+
+  return true;
+}
+
+/**
  * Traite un message venant d'un numéro déjà enregistré dans `drivers`.
  * Un livreur n'est jamais traité comme un client (pas de profil créé,
  * pas de réponse IA menu) : soit un bouton ✅/❌ de disponibilité, soit un
- * bouton "Client livré", soit un mot-clé texte met à jour `is_available`.
+ * bouton "Client livré", soit un mot-clé texte met à jour `is_available`,
+ * soit un montant en texte libre confirme un tarif de livraison en attente.
  */
 async function handleDriverMessage(driver: { id: string; name: string }, message: WhatsappMessage, phone: string) {
   const supabase = createServiceClient();
@@ -199,6 +304,22 @@ async function handleDriverMessage(driver: { id: string; name: string }, message
         payload: message as unknown as Record<string, unknown>,
       });
       await handleDeliveryConfirmed(driver, orderId, phone);
+      return;
+    }
+  }
+
+  if (message.type === "text" && message.text?.body) {
+    const handledAsQuote = await handleDriverQuoteReply(driver, phone, message.text.body);
+    if (handledAsQuote) {
+      await supabase.from("whatsapp_messages").insert({
+        driver_id: driver.id,
+        wa_message_id: message.id,
+        direction: "inbound",
+        phone,
+        message_type: message.type,
+        content: message.text.body,
+        payload: message as unknown as Record<string, unknown>,
+      });
       return;
     }
   }
@@ -331,13 +452,28 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        // Un vocal est transcrit AVANT d'être loggé, pour que le texte
+        // (pas juste "message audio") entre dans l'historique utilisé par
+        // l'IA. Un échec de transcription dégrade gracieusement : le
+        // message est quand même sauvegardé (sans contenu texte).
+        let messageContent = message.text?.body ?? null;
+        if (message.type === "audio" && message.audio?.id) {
+          try {
+            const { buffer, mimeType } = await downloadWhatsappMedia(message.audio.id);
+            messageContent = await transcribeAudio(buffer, message.audio.mime_type ?? mimeType);
+            console.log("[whatsapp-webhook] audio transcribed", { waMessageId: message.id, transcript: messageContent });
+          } catch (err) {
+            console.error("[whatsapp-webhook] audio transcription FAILED", { waMessageId: message.id, error: err });
+          }
+        }
+
         const { error: messageError } = await supabase.from("whatsapp_messages").insert({
           profile_id: profile?.id ?? null,
           wa_message_id: message.id,
           direction: "inbound",
           phone,
           message_type: message.type,
-          content: message.text?.body ?? null,
+          content: messageContent,
           payload: message as unknown as Record<string, unknown>,
         });
 
@@ -367,7 +503,10 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error("[whatsapp-webhook] pause auto-reply FAILED", err);
           }
-        } else if (profile?.ai_active && message.type === "text" && message.text?.body) {
+        } else if (message.type === "location" && message.location && profile?.id) {
+          console.log("[whatsapp-webhook] customer shared location, computing delivery fee", { profileId: profile.id });
+          await handleCustomerLocation(profile.id, phone, message.location.latitude, message.location.longitude);
+        } else if (profile?.ai_active && messageContent && (message.type === "text" || message.type === "audio")) {
           console.log("[whatsapp-webhook] conversation is in IA mode, generating reply", { profileId: profile.id });
           await handleAiReply(profile.id, phone);
         } else {

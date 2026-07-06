@@ -255,6 +255,19 @@ export interface Database {
         },
         "subject" | "body_html"
       >;
+      pending_delivery_quotes: Table<
+        {
+          id: string;
+          profile_id: string | null;
+          phone: string;
+          distance_km: number;
+          driver_id: string | null;
+          status: "pending" | "confirmed";
+          quoted_fee: number | null;
+          created_at: string;
+        },
+        "phone" | "distance_km"
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

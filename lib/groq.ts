@@ -29,3 +29,25 @@ export async function generateGroqReply(systemPrompt: string, history: ChatTurn[
   }
   return text.trim();
 }
+
+const WHISPER_MODEL = "whisper-large-v3";
+
+/** Transcrit un audio (message vocal WhatsApp) via Groq Whisper. Serveur uniquement. */
+export async function transcribeAudio(buffer: Buffer, mimeType: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY n'est pas configurée");
+  }
+
+  const groq = new Groq({ apiKey });
+  const extension = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "mp4" : "wav";
+  const file = new File([new Uint8Array(buffer)], `audio.${extension}`, { type: mimeType });
+
+  const transcription = await groq.audio.transcriptions.create({
+    file,
+    model: WHISPER_MODEL,
+    language: "fr",
+  });
+
+  return transcription.text.trim();
+}

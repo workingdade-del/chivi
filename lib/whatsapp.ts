@@ -37,6 +37,24 @@ export function normalizePhone(phone: string): string {
   return phone.replace(/[^\d]/g, "");
 }
 
+/** Télécharge un média WhatsApp (ex : message vocal) — deux appels : résoudre l'URL, puis récupérer les octets. Serveur uniquement. */
+export async function downloadWhatsappMedia(mediaId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  const metaRes = await fetch(`${GRAPH_BASE}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${token()}` },
+  });
+  if (!metaRes.ok) {
+    throw new Error(`Échec résolution média WhatsApp (${metaRes.status}): ${await metaRes.text()}`);
+  }
+  const meta = (await metaRes.json()) as { url: string; mime_type: string };
+
+  const fileRes = await fetch(meta.url, { headers: { Authorization: `Bearer ${token()}` } });
+  if (!fileRes.ok) {
+    throw new Error(`Échec téléchargement média WhatsApp (${fileRes.status})`);
+  }
+  const buffer = Buffer.from(await fileRes.arrayBuffer());
+  return { buffer, mimeType: meta.mime_type };
+}
+
 export const DRIVER_AVAILABLE_BUTTON_ID = "driver_available";
 export const DRIVER_UNAVAILABLE_BUTTON_ID = "driver_unavailable";
 
@@ -127,6 +145,22 @@ export async function sendDriverDeliveryAssignment(params: {
 
 export function buildPostDeliveryFeedbackMessage(): string {
   return "🎉 Votre commande a bien été livrée ! Bon appétit 😋\nN'hésitez pas à nous donner votre avis en répondant à ce message. Merci de choisir CHIVI !";
+}
+
+export function buildDeliveryFeeMessage(distanceKm: number, fee: number): string {
+  return `📍 Position reçue ! Tu es à environ ${distanceKm.toFixed(1)} km de notre cuisine.\nFrais de livraison estimés : ${fee.toLocaleString("fr-FR")} FCFA.`;
+}
+
+export function buildDeliveryFeePendingMessage(): string {
+  return "Patientez quelques secondes, je vérifie le prix de la course avec notre livreur 🙏";
+}
+
+export function buildDriverQuoteRequestMessage(distanceKm: number): string {
+  return `📍 Nouvelle demande de livraison à ${distanceKm.toFixed(1)} km (hors zone tarifée). Quel tarif proposes-tu ? Réponds simplement avec le montant en FCFA (ex : 1500).`;
+}
+
+export function buildDeliveryFeeConfirmedMessage(fee: number): string {
+  return `✅ Prix confirmé avec notre livreur : ${fee.toLocaleString("fr-FR")} FCFA pour la livraison.`;
 }
 
 export function buildOrderConfirmationMessage(params: {
