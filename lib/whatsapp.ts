@@ -73,6 +73,62 @@ export async function sendWhatsappAvailabilityRequest(to: string, driverName: st
   return res.json();
 }
 
+export const DELIVERY_DONE_BUTTON_PREFIX = "delivery_done:";
+
+/** Message livreur à l'assignation : adresse + montant à collecter + bouton "Client livré". Serveur uniquement. */
+export async function sendDriverDeliveryAssignment(params: {
+  to: string;
+  driverName: string;
+  orderNumber: string;
+  orderId: string;
+  address: string;
+  amountToCollect: number;
+  paymentLabel: string;
+}) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(params.to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: {
+          text: [
+            `Nouvelle course ${params.orderNumber}, ${params.driverName} 🛵`,
+            "",
+            `📍 Adresse : ${params.address}`,
+            `💰 À collecter : ${params.amountToCollect.toLocaleString("fr-FR")} FCFA (${params.paymentLabel})`,
+          ].join("\n"),
+        },
+        action: {
+          buttons: [
+            {
+              type: "reply",
+              reply: { id: `${DELIVERY_DONE_BUTTON_PREFIX}${params.orderId}`, title: "✅ Client livré" },
+            },
+          ],
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
+export function buildPostDeliveryFeedbackMessage(): string {
+  return "🎉 Votre commande a bien été livrée ! Bon appétit 😋\nN'hésitez pas à nous donner votre avis en répondant à ce message. Merci de choisir CHIVI !";
+}
+
 export function buildOrderConfirmationMessage(params: {
   orderNumber: string;
   total: number;

@@ -53,12 +53,22 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
   async function handleAssign() {
     if (!selectedDriver) return;
     setBusy(true);
-    const supabase = createClient();
-    await supabase.from("order_assignments").insert({ order_id: order.id, driver_id: selectedDriver });
-    await supabase.from("orders").update({ status: "en_route" }).eq("id", order.id);
-    await supabase.from("drivers").update({ status: "en_course" }).eq("id", selectedDriver);
-    setBusy(false);
-    router.refresh();
+    try {
+      const res = await fetch(`/api/admin/orders/${order.id}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverId: selectedDriver }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Échec de l'assignation");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Échec de l'assignation");
+    } finally {
+      setBusy(false);
+      router.refresh();
+    }
   }
 
   async function handleMarkDelivered() {

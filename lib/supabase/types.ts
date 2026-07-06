@@ -219,6 +219,18 @@ export interface Database {
         },
         "product_id"
       >;
+      scheduled_messages: Table<
+        {
+          id: string;
+          order_id: string | null;
+          phone: string;
+          message: string;
+          send_at: string;
+          sent: boolean;
+          created_at: string;
+        },
+        "phone" | "message" | "send_at"
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

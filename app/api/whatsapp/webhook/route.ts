@@ -3,7 +3,9 @@ import { createServiceClient } from "@/lib/supabase/server";
 import {
   DRIVER_AVAILABLE_BUTTON_ID,
   DRIVER_UNAVAILABLE_BUTTON_ID,
+  DELIVERY_DONE_BUTTON_PREFIX,
   buildPauseAutoReply,
+  buildPostDeliveryFeedbackMessage,
   normalizePhone,
   sendWhatsappText,
 } from "@/lib/whatsapp";
@@ -128,13 +130,78 @@ async function findDriverByPhone(phone: string): Promise<{ id: string; name: str
 }
 
 /**
+ * Un livreur clique "✅ Client livré" : commande → livrée, assignation →
+ * livrée, livreur → libre, et on programme (via scheduled_messages, pas un
+ * setTimeout — un serverless ne survit pas 5 minutes) le message de
+ * feedback client 5 minutes plus tard.
+ */
+async function handleDeliveryConfirmed(driver: { id: string; name: string }, orderId: string, driverPhone: string) {
+  const supabase = createServiceClient();
+
+  const { data: order } = await supabase.from("orders").select("id, profile_id").eq("id", orderId).maybeSingle();
+  if (!order) {
+    console.warn("[whatsapp-webhook] delivery confirmed for unknown order", { orderId, driverId: driver.id });
+    return;
+  }
+
+  await supabase.from("orders").update({ status: "livree" }).eq("id", orderId);
+  await supabase
+    .from("order_assignments")
+    .update({ status: "livree", delivered_at: new Date().toISOString() })
+    .eq("order_id", orderId)
+    .eq("driver_id", driver.id);
+  await supabase.from("drivers").update({ status: "libre" }).eq("id", driver.id);
+
+  if (order.profile_id) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("whatsapp_phone")
+      .eq("id", order.profile_id)
+      .maybeSingle();
+
+    if (profile) {
+      await supabase.from("scheduled_messages").insert({
+        order_id: orderId,
+        phone: profile.whatsapp_phone,
+        message: buildPostDeliveryFeedbackMessage(),
+        send_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      });
+    }
+  }
+
+  try {
+    await sendWhatsappText(driverPhone, `Merci ${driver.name}, livraison confirmée ✅. Bonne route !`);
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to send delivery confirmation to driver", err);
+  }
+}
+
+/**
  * Traite un message venant d'un numéro déjà enregistré dans `drivers`.
  * Un livreur n'est jamais traité comme un client (pas de profil créé,
- * pas de réponse IA menu) : soit un bouton ✅/❌, soit un mot-clé texte
- * met à jour `is_available`.
+ * pas de réponse IA menu) : soit un bouton ✅/❌ de disponibilité, soit un
+ * bouton "Client livré", soit un mot-clé texte met à jour `is_available`.
  */
 async function handleDriverMessage(driver: { id: string; name: string }, message: WhatsappMessage, phone: string) {
   const supabase = createServiceClient();
+
+  if (message.type === "interactive" && message.interactive?.type === "button_reply") {
+    const buttonId = message.interactive.button_reply?.id;
+    if (buttonId?.startsWith(DELIVERY_DONE_BUTTON_PREFIX)) {
+      const orderId = buttonId.slice(DELIVERY_DONE_BUTTON_PREFIX.length);
+      await supabase.from("whatsapp_messages").insert({
+        driver_id: driver.id,
+        wa_message_id: message.id,
+        direction: "inbound",
+        phone,
+        message_type: message.type,
+        content: message.interactive.button_reply?.title ?? null,
+        payload: message as unknown as Record<string, unknown>,
+      });
+      await handleDeliveryConfirmed(driver, orderId, phone);
+      return;
+    }
+  }
 
   let nextAvailability: boolean | null = null;
 
