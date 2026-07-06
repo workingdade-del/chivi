@@ -89,6 +89,9 @@ export interface Database {
           phone: string;
           status: DriverStatus;
           is_active: boolean;
+          is_available: boolean;
+          last_seen: string | null;
+          photo_url: string | null;
           created_at: string;
         },
         "name" | "phone"
@@ -168,6 +171,7 @@ export interface Database {
           id: string;
           profile_id: string | null;
           order_id: string | null;
+          driver_id: string | null;
           wa_message_id: string | null;
           direction: WhatsappDirection;
           phone: string;

@@ -201,7 +201,11 @@ interface DriverAssignmentRow {
 
 export async function getDrivers() {
   const supabase = createClient();
-  const { data: drivers } = await supabase.from("drivers").select("id, name, phone, status").order("name");
+  const { data: drivers } = await supabase
+    .from("drivers")
+    .select("id, name, phone, status, is_available, last_seen, photo_url")
+    .eq("is_active", true)
+    .order("name");
 
   const { data: activeAssignments } = await supabase
     .from("order_assignments")

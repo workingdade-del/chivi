@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { normalizePhone, sendWhatsappText } from "@/lib/whatsapp";
+import {
+  DRIVER_AVAILABLE_BUTTON_ID,
+  DRIVER_UNAVAILABLE_BUTTON_ID,
+  normalizePhone,
+  sendWhatsappText,
+} from "@/lib/whatsapp";
+import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
 import { generateGroqReply, type ChatTurn } from "@/lib/groq";
 
@@ -36,18 +42,24 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
 }
 
+interface WhatsappMessage {
+  id: string;
+  from: string;
+  type: string;
+  text?: { body: string };
+  interactive?: {
+    type: string;
+    button_reply?: { id: string; title: string };
+  };
+}
+
 interface WhatsappWebhookPayload {
   entry?: {
     id?: string;
     changes?: {
       value?: {
         contacts?: { profile?: { name?: string }; wa_id: string }[];
-        messages?: {
-          id: string;
-          from: string;
-          type: string;
-          text?: { body: string };
-        }[];
+        messages?: WhatsappMessage[];
       };
       field?: string;
     }[];
@@ -102,7 +114,76 @@ async function handleAiReply(profileId: string, phone: string) {
   }
 }
 
-/** Réception des messages entrants : log + auto-création du profil client + réponse IA si activée. */
+/**
+ * Cherche un livreur actif par numéro, en normalisant des deux côtés
+ * (le format stocké en base n'est pas garanti identique à celui reçu
+ * de Meta). Le nombre de livreurs actifs reste petit (poignée de
+ * personnes) : un scan en mémoire est largement suffisant ici.
+ */
+async function findDriverByPhone(phone: string): Promise<{ id: string; name: string } | null> {
+  const supabase = createServiceClient();
+  const { data: drivers } = await supabase.from("drivers").select("id, name, phone").eq("is_active", true);
+  return drivers?.find((d) => normalizePhone(d.phone) === phone) ?? null;
+}
+
+/**
+ * Traite un message venant d'un numéro déjà enregistré dans `drivers`.
+ * Un livreur n'est jamais traité comme un client (pas de profil créé,
+ * pas de réponse IA menu) : soit un bouton ✅/❌, soit un mot-clé texte
+ * met à jour `is_available`.
+ */
+async function handleDriverMessage(driver: { id: string; name: string }, message: WhatsappMessage, phone: string) {
+  const supabase = createServiceClient();
+
+  let nextAvailability: boolean | null = null;
+
+  if (message.type === "interactive" && message.interactive?.type === "button_reply") {
+    const buttonId = message.interactive.button_reply?.id;
+    if (buttonId === DRIVER_AVAILABLE_BUTTON_ID) nextAvailability = true;
+    else if (buttonId === DRIVER_UNAVAILABLE_BUTTON_ID) nextAvailability = false;
+  } else if (message.type === "text" && message.text?.body) {
+    nextAvailability = detectAvailabilityIntent(message.text.body);
+  }
+
+  console.log("[whatsapp-webhook] driver message", {
+    driverId: driver.id,
+    type: message.type,
+    nextAvailability,
+  });
+
+  const update: { last_seen: string; is_available?: boolean } = { last_seen: new Date().toISOString() };
+  if (nextAvailability !== null) update.is_available = nextAvailability;
+
+  const { error } = await supabase.from("drivers").update(update).eq("id", driver.id);
+  if (error) {
+    console.error("[whatsapp-webhook] failed to update driver availability", { driverId: driver.id, error });
+  }
+
+  await supabase.from("whatsapp_messages").insert({
+    driver_id: driver.id,
+    wa_message_id: message.id,
+    direction: "inbound",
+    phone,
+    message_type: message.type,
+    content: message.text?.body ?? message.interactive?.button_reply?.title ?? null,
+    payload: message as unknown as Record<string, unknown>,
+  });
+
+  if (nextAvailability !== null) {
+    try {
+      await sendWhatsappText(
+        phone,
+        nextAvailability
+          ? `Merci ${driver.name}, tu es marqué disponible ✅.`
+          : `Merci ${driver.name}, tu es marqué non disponible ❌.`
+      );
+    } catch (err) {
+      console.error("[whatsapp-webhook] failed to send driver confirmation", err);
+    }
+  }
+}
+
+/** Réception des messages entrants : livreur (disponibilité) ou client (profil + IA). */
 export async function POST(req: NextRequest) {
   let payload: WhatsappWebhookPayload;
   try {
@@ -139,14 +220,24 @@ export async function POST(req: NextRequest) {
       }
 
       for (const message of value.messages) {
+        const phone = normalizePhone(message.from);
         console.log("[whatsapp-webhook] processing inbound message", {
-          from: message.from,
+          from: phone,
           type: message.type,
           waMessageId: message.id,
         });
 
+        const driver = await findDriverByPhone(phone);
+
+        if (driver) {
+          console.log("[whatsapp-webhook] message is from a driver, routing to driver handler", {
+            driverId: driver.id,
+          });
+          await handleDriverMessage(driver, message, phone);
+          continue;
+        }
+
         const contact = value.contacts?.find((c) => c.wa_id === message.from);
-        const phone = normalizePhone(message.from);
 
         const { data: profile, error: profileError } = await supabase
           .from("profiles")

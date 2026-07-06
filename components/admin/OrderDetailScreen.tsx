@@ -18,6 +18,7 @@ interface Driver {
   name: string;
   phone: string;
   status: string;
+  is_available: boolean;
 }
 
 export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; drivers: Driver[] }) {
@@ -183,7 +184,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
                     className="border-2 border-[#e6dcc4] rounded-xl px-3 py-2.5 text-sm"
                   >
                     <option value="">Choisir un livreur…</option>
-                    {drivers.filter((d) => d.status === "libre").map((d) => (
+                    {drivers.filter((d) => d.status === "libre" && d.is_available).map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.name}
                       </option>

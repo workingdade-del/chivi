@@ -37,6 +37,42 @@ export function normalizePhone(phone: string): string {
   return phone.replace(/[^\d]/g, "");
 }
 
+export const DRIVER_AVAILABLE_BUTTON_ID = "driver_available";
+export const DRIVER_UNAVAILABLE_BUTTON_ID = "driver_unavailable";
+
+/** Demande de disponibilité livreur avec boutons interactifs (✅/❌). Serveur uniquement. */
+export async function sendWhatsappAvailabilityRequest(to: string, driverName: string) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: `Bonjour ${driverName}, es-tu disponible pour des livraisons CHIVI maintenant ?` },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: DRIVER_AVAILABLE_BUTTON_ID, title: "✅ Disponible" } },
+            { type: "reply", reply: { id: DRIVER_UNAVAILABLE_BUTTON_ID, title: "❌ Non disponible" } },
+          ],
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
 export function buildOrderConfirmationMessage(params: {
   orderNumber: string;
   total: number;
