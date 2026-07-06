@@ -5,7 +5,7 @@ import type { ProductCategory } from "@/lib/supabase/types";
 
 const CHIVI_ORDER_LINK = "https://chividashboard.vercel.app/client";
 
-/** Construit le menu + les zones de livraison à jour depuis la base, pour le system prompt Gemini. */
+/** Construit le menu + les zones de livraison à jour depuis la base, pour le system prompt de l'assistant IA. */
 export async function buildChiviSystemPrompt(): Promise<string> {
   const supabase = createServiceClient();
 

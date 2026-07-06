@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { normalizePhone, sendWhatsappText } from "@/lib/whatsapp";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
-import { generateGeminiReply, type GeminiTurn } from "@/lib/gemini";
+import { generateGroqReply, type ChatTurn } from "@/lib/groq";
 
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
@@ -57,7 +57,7 @@ interface WhatsappWebhookPayload {
 /**
  * Génère et envoie une réponse IA si la conversation est en mode "ia"
  * (profiles.ai_active = true). Ne doit jamais faire échouer le webhook :
- * les erreurs Gemini/WhatsApp sont loggées, pas propagées.
+ * les erreurs Groq/WhatsApp sont loggées, pas propagées.
  */
 async function handleAiReply(profileId: string, phone: string) {
   const supabase = createServiceClient();
@@ -70,10 +70,10 @@ async function handleAiReply(profileId: string, phone: string) {
       .order("created_at", { ascending: false })
       .limit(20);
 
-    const history: GeminiTurn[] = (recentMessages ?? [])
+    const history: ChatTurn[] = (recentMessages ?? [])
       .reverse()
       .filter((m) => m.content)
-      .map((m) => ({ role: m.direction === "outbound" ? "model" : "user", text: m.content as string }));
+      .map((m) => ({ role: m.direction === "outbound" ? "assistant" : "user", content: m.content as string }));
 
     if (history.length === 0 || history[history.length - 1].role !== "user") {
       console.warn("[whatsapp-webhook] no trailing user turn, skipping AI reply", { profileId });
@@ -81,9 +81,9 @@ async function handleAiReply(profileId: string, phone: string) {
     }
 
     const systemPrompt = await buildChiviSystemPrompt();
-    const reply = await generateGeminiReply(systemPrompt, history);
+    const reply = await generateGroqReply(systemPrompt, history);
 
-    console.log("[whatsapp-webhook] Gemini reply generated", { profileId, reply });
+    console.log("[whatsapp-webhook] Groq reply generated", { profileId, reply });
 
     await sendWhatsappText(phone, reply);
 
