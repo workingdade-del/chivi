@@ -2,13 +2,13 @@ import { Resend } from "resend";
 
 const FROM_ADDRESS = process.env.RESEND_FROM_EMAIL ?? "CHIVI <onboarding@resend.dev>";
 
-function getResendClient(): Resend | null {
+export function getResendClient(): Resend | null {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return null;
   return new Resend(apiKey);
 }
 
-function brandedShell(title: string, bodyHtml: string): string {
+export function brandedShell(title: string, bodyHtml: string): string {
   return `
   <div style="background:#f7f0e2;padding:32px 16px;font-family:'Helvetica Neue',Arial,sans-serif;">
     <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #ece2cd;">
@@ -121,4 +121,28 @@ export async function sendAdminOrderNotification(params: {
   } catch (err) {
     console.error("[email] échec notification admin", { orderNumber: params.orderNumber, error: err });
   }
+}
+
+/**
+ * Envoie une newsletter à une liste d'emails, un par un (Resend n'a pas de
+ * vraie API "broadcast" simple à ce volume). Retourne le nombre envoyé avec
+ * succès. No-op (0 envoyé) si RESEND_API_KEY absente — jamais d'exception.
+ */
+export async function sendBulkEmail(toEmails: string[], subject: string, html: string): Promise<number> {
+  const resend = getResendClient();
+  if (!resend) {
+    console.warn("[email] RESEND_API_KEY absente — newsletter non envoyée (dégradation gracieuse)");
+    return 0;
+  }
+
+  let sent = 0;
+  for (const to of toEmails) {
+    try {
+      await resend.emails.send({ from: FROM_ADDRESS, to, subject, html });
+      sent += 1;
+    } catch (err) {
+      console.error("[email] échec envoi newsletter", { to, error: err });
+    }
+  }
+  return sent;
 }

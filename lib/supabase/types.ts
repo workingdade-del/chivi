@@ -242,6 +242,19 @@ export interface Database {
         },
         "item_id" | "item_name" | "change_qty" | "quantity_after"
       >;
+      newsletter_sends: Table<
+        {
+          id: string;
+          subject: string;
+          template: string | null;
+          body_html: string;
+          recipient_count: number;
+          channel: "email" | "whatsapp";
+          sent_by: string | null;
+          created_at: string;
+        },
+        "subject" | "body_html"
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
