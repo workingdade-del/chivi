@@ -1,14 +1,20 @@
 import { Package, TrendingUp, Receipt, PiggyBank } from "lucide-react";
 import { getDashboardData } from "@/lib/admin";
+import { getSystemSettings } from "@/lib/system-settings";
 import { formatFcfa } from "@/lib/format";
+import { PauseControl } from "@/components/admin/PauseControl";
 
 export default async function AdminDashboardPage() {
-  const data = await getDashboardData();
+  const [data, settings] = await Promise.all([getDashboardData(), getSystemSettings()]);
   const maxRevenue = Math.max(...data.chart.map((c) => c.revenue), 1);
   const inProgressTotal = data.inProgress.recue + data.inProgress.en_preparation_prete + data.inProgress.en_route || 1;
 
   return (
     <div>
+      <div className="flex justify-end mb-4">
+        <PauseControl initial={{ isPaused: settings.isPaused, pauseReason: settings.pauseReason }} />
+      </div>
+
       <div className="grid grid-cols-4 gap-4">
         <KpiCard label="Commandes" value={String(data.ordersToday)} icon={Package} iconBg="rgba(255,182,0,.16)" iconColor="#a6740a" note={`${data.ordersToday} aujourd'hui`} noteColor="#1b7a44" />
         <KpiCard label="Revenus" value={formatFcfa(data.revenueToday)} icon={TrendingUp} iconBg="#e7f6ec" iconColor="#1b7a44" note="Aujourd'hui" noteColor="#1b7a44" />

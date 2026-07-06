@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import {
   DRIVER_AVAILABLE_BUTTON_ID,
   DRIVER_UNAVAILABLE_BUTTON_ID,
+  buildPauseAutoReply,
   normalizePhone,
   sendWhatsappText,
 } from "@/lib/whatsapp";
@@ -198,6 +199,13 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceClient();
   const entries = payload.entry ?? [];
 
+  const { data: settings } = await supabase
+    .from("system_settings")
+    .select("is_paused, pause_reason")
+    .eq("id", true)
+    .maybeSingle();
+  const isPaused = settings?.is_paused ?? false;
+
   if (entries.length === 0) {
     console.warn("[whatsapp-webhook] payload has no entry[] — nothing to process", payload);
   }
@@ -277,7 +285,22 @@ export async function POST(req: NextRequest) {
 
         console.log("[whatsapp-webhook] message saved OK", { waMessageId: message.id, profileId: profile?.id });
 
-        if (profile?.ai_active && message.type === "text" && message.text?.body) {
+        if (isPaused) {
+          console.log("[whatsapp-webhook] system is paused, sending pause auto-reply", { profileId: profile?.id });
+          try {
+            const reply = buildPauseAutoReply(settings?.pause_reason ?? "Indisponibilité temporaire");
+            await sendWhatsappText(phone, reply);
+            await supabase.from("whatsapp_messages").insert({
+              profile_id: profile?.id ?? null,
+              direction: "outbound",
+              phone,
+              message_type: "text",
+              content: reply,
+            });
+          } catch (err) {
+            console.error("[whatsapp-webhook] pause auto-reply FAILED", err);
+          }
+        } else if (profile?.ai_active && message.type === "text" && message.text?.body) {
           console.log("[whatsapp-webhook] conversation is in IA mode, generating reply", { profileId: profile.id });
           await handleAiReply(profile.id, phone);
         } else {

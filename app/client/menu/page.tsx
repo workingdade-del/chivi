@@ -1,16 +1,22 @@
 import { getMenu, CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/menu";
 import { MenuScreen } from "@/components/client/MenuScreen";
+import { PauseGate } from "@/components/client/PauseGate";
+import { getSystemSettings } from "@/lib/system-settings";
 
 export const revalidate = 60;
 
 export default async function MenuPage() {
   try {
-    const products = await getMenu();
+    const [products, settings] = await Promise.all([getMenu(), getSystemSettings()]);
     const categories = CATEGORY_ORDER.filter((c) => products.some((p) => p.category === c)).map(
       (c) => ({ id: c, name: CATEGORY_LABELS[c] })
     );
 
-    return <MenuScreen products={products} categories={categories} />;
+    return (
+      <PauseGate initial={{ isPaused: settings.isPaused, pauseReason: settings.pauseReason }}>
+        <MenuScreen products={products} categories={categories} />
+      </PauseGate>
+    );
   } catch (err) {
     return (
       <div className="p-8 text-center text-maroon">

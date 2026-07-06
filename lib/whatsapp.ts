@@ -96,3 +96,11 @@ export function buildWaMeOrderLink(businessNumber: string, orderNumber: string, 
   const text = `Bonjour CHIVI, je confirme ma commande ${orderNumber} :\n${itemsSummary}\nTotal : ${total.toLocaleString("fr-FR")} FCFA`;
   return `https://wa.me/${businessNumber}?text=${encodeURIComponent(text)}`;
 }
+
+export function buildPauseAutoReply(reason: string): string {
+  return `Bonjour ! 😔 Nous sommes momentanément indisponibles.\nRaison : ${reason}.\nNous reviendrons très bientôt. Pour toute urgence, contactez notre support : wa.me/22959398724`;
+}
+
+export function buildResumeMessage(): string {
+  return "Bonne nouvelle ! 🎉 CHIVI est de nouveau disponible. Vous pouvez commander maintenant !";
+}

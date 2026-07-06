@@ -65,6 +65,17 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServiceClient();
+
+  const { data: settings } = await supabase
+    .from("system_settings")
+    .select("is_paused")
+    .eq("id", true)
+    .maybeSingle();
+
+  if (settings?.is_paused) {
+    return NextResponse.json({ error: "Le service est momentanément indisponible." }, { status: 503 });
+  }
+
   const phone = normalizePhone(body.whatsappPhone);
 
   // Toujours recalculer les prix côté serveur — ne jamais faire confiance

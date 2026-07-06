@@ -182,6 +182,16 @@ export interface Database {
         },
         "direction" | "phone"
       >;
+      system_settings: Table<
+        {
+          id: boolean;
+          is_paused: boolean;
+          pause_reason: string | null;
+          paused_at: string | null;
+          paused_by: string | null;
+        },
+        "id"
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 const TITLES: { match: (p: string) => boolean; title: string; sub: string }[] = [
   { match: (p) => p === "/admin", title: "Dashboard", sub: "Aperçu du service" },
@@ -15,9 +17,26 @@ const TITLES: { match: (p: string) => boolean; title: string; sub: string }[] = 
   { match: (p) => p.startsWith("/admin/clients"), title: "Clients", sub: "Profils créés automatiquement via WhatsApp" },
 ];
 
-export function TopBar() {
+export function TopBar({ initialPaused = false }: { initialPaused?: boolean }) {
   const pathname = usePathname();
   const { title, sub } = TITLES.find((t) => t.match(pathname)) ?? TITLES[0];
+  const [isPaused, setIsPaused] = useState(initialPaused);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`system-settings-topbar:${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "system_settings" },
+        (payload) => setIsPaused((payload.new as { is_paused: boolean }).is_paused)
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <div className="flex-none h-[66px] border-b border-[#e6dcc6] flex items-center justify-between px-7">
@@ -30,10 +49,17 @@ export function TopBar() {
           <Search size={15} strokeWidth={2} />
           Rechercher…
         </div>
-        <div className="flex items-center gap-1.5 bg-status-green-bg rounded-full px-3.5 py-2 text-status-green-deep text-[12.5px] font-semibold">
-          <span className="w-2 h-2 rounded-full bg-status-green animate-pulse" />
-          Service ouvert
-        </div>
+        {isPaused ? (
+          <div className="flex items-center gap-1.5 bg-[rgba(231,50,35,.14)] rounded-full px-3.5 py-2 text-[#c0392b] text-[12.5px] font-semibold">
+            <span className="w-2 h-2 rounded-full bg-chilli animate-pulse" />
+            Service en pause
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 bg-status-green-bg rounded-full px-3.5 py-2 text-status-green-deep text-[12.5px] font-semibold">
+            <span className="w-2 h-2 rounded-full bg-status-green animate-pulse" />
+            Service ouvert
+          </div>
+        )}
       </div>
     </div>
   );
