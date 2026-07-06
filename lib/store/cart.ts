@@ -28,6 +28,7 @@ export interface DeliveryZoneChoice {
 interface CartState {
   cart: CartLine[];
   whatsappPhone: string;
+  email: string;
   addressDetails: string;
   deliveryLat: number | null;
   deliveryLng: number | null;
@@ -39,6 +40,7 @@ interface CartState {
   removeLine: (key: string) => void;
   clearCart: () => void;
   setPhone: (phone: string) => void;
+  setEmail: (email: string) => void;
   setAddressDetails: (details: string) => void;
   setDeliveryPosition: (lat: number, lng: number) => void;
   setDeliveryZone: (zone: DeliveryZoneChoice) => void;
@@ -50,6 +52,7 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       cart: [],
       whatsappPhone: "",
+      email: "",
       addressDetails: "",
       deliveryLat: null,
       deliveryLng: null,
@@ -72,6 +75,7 @@ export const useCartStore = create<CartState>()(
       removeLine: (key) => set({ cart: get().cart.filter((l) => l.key !== key) }),
       clearCart: () => set({ cart: [] }),
       setPhone: (whatsappPhone) => set({ whatsappPhone }),
+      setEmail: (email) => set({ email }),
       setAddressDetails: (addressDetails) => set({ addressDetails }),
       setDeliveryPosition: (deliveryLat, deliveryLng) => set({ deliveryLat, deliveryLng }),
       setDeliveryZone: (deliveryZone) => set({ deliveryZone }),

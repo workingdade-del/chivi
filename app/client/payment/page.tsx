@@ -33,6 +33,7 @@ export default function PaymentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           whatsappPhone: store.whatsappPhone,
+          email: store.email || undefined,
           addressDetails: store.addressDetails,
           deliveryLat: store.deliveryLat,
           deliveryLng: store.deliveryLng,

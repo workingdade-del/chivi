@@ -22,6 +22,8 @@ export function LocationScreen({ zones }: { zones: MenuDeliveryZone[] }) {
   const {
     whatsappPhone,
     setPhone,
+    email,
+    setEmail,
     addressDetails,
     setAddressDetails,
     deliveryLat,
@@ -75,6 +77,19 @@ export function LocationScreen({ zones }: { zones: MenuDeliveryZone[] }) {
             value={whatsappPhone}
             onChange={(e) => setPhone(normalizePhoneInput(e.target.value))}
             placeholder="Ex : 90 12 34 56"
+            className="w-full box-border border-2 border-[#e6dcc4] rounded-2xl p-[13px] font-product text-sm text-ink bg-white"
+          />
+        </div>
+
+        <div>
+          <div className="text-xs text-[#8a7f74] tracking-[.04em] uppercase mb-1.5">
+            Email (optionnel)
+          </div>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Laisse ton email pour recevoir ton reçu et nos offres spéciales 🎁"
             className="w-full box-border border-2 border-[#e6dcc4] rounded-2xl p-[13px] font-product text-sm text-ink bg-white"
           />
         </div>

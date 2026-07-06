@@ -28,7 +28,8 @@ export function MenuImage({
       alt={alt}
       fill
       className={className ?? "object-cover"}
-      sizes="430px"
+      sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 430px"
+      loading="lazy"
       onError={() => setFailed(true)}
     />
   );

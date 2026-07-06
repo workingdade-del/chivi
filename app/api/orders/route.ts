@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { buildOrderConfirmationMessage, normalizePhone, sendWhatsappText } from "@/lib/whatsapp";
+import { sendOrderReceiptEmail, sendAdminOrderNotification } from "@/lib/email";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ interface OrderLineInput {
 interface CreateOrderBody {
   whatsappPhone: string;
   fullName?: string;
+  email?: string;
   addressDetails: string;
   deliveryLat: number | null;
   deliveryLng: number | null;
@@ -137,7 +139,14 @@ export async function POST(req: NextRequest) {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .upsert(
-      { whatsapp_phone: phone, full_name: body.fullName, address_details: body.addressDetails, delivery_lat: body.deliveryLat, delivery_lng: body.deliveryLng },
+      {
+        whatsapp_phone: phone,
+        full_name: body.fullName,
+        email: body.email,
+        address_details: body.addressDetails,
+        delivery_lat: body.deliveryLat,
+        delivery_lng: body.deliveryLng,
+      },
       { onConflict: "whatsapp_phone" }
     )
     .select("id")
@@ -226,6 +235,26 @@ export async function POST(req: NextRequest) {
     // pas faire échouer la création de commande (token expiré, etc.).
     console.error("WhatsApp send failed", err);
   }
+
+  if (body.email) {
+    await sendOrderReceiptEmail({
+      toEmail: body.email,
+      orderNumber: order.order_number,
+      itemsSummary: preparedLines.map((l) => ({ name: l.productName, qty: l.quantity, lineTotal: l.lineTotal })),
+      subtotal,
+      deliveryFee,
+      total,
+      address: body.addressDetails,
+      paymentLabel: paymentLabel(body.paymentMethod),
+    });
+  }
+
+  await sendAdminOrderNotification({
+    orderNumber: order.order_number,
+    total,
+    phone,
+    address: body.addressDetails,
+  });
 
   return NextResponse.json({
     orderId: order.id,

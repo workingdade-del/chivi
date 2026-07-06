@@ -27,8 +27,21 @@ export function MenuScreen({
 
   return (
     <div>
-      <div className="sticky top-0 z-20 bg-maroon px-5 pt-[34px] pb-4">
-        <div className="flex items-center justify-between">
+      <div className="hidden lg:flex items-center justify-between px-8 py-3 bg-maroon-deep">
+        <div
+          className="w-32 h-9 bg-left bg-contain bg-no-repeat"
+          style={{ backgroundImage: "url('/brand_kit/assets/logo/chivi-wordmark-gold.png')" }}
+        />
+        <div className="font-display text-gold text-[13px] tracking-[.08em] uppercase">
+          La cuillère ne ment jamais
+        </div>
+        <div className="bg-chilli text-white text-xs font-bold px-4 py-1.5 rounded-full">
+          🎉 Livraison offerte dès 2 plats commandés
+        </div>
+      </div>
+
+      <div className="sticky top-0 z-20 bg-maroon px-5 lg:px-8 pt-[34px] lg:pt-6 pb-4">
+        <div className="flex items-center justify-between lg:hidden">
           <div
             className="w-28 h-[34px] bg-left bg-contain bg-no-repeat"
             style={{ backgroundImage: "url('/brand_kit/assets/logo/chivi-wordmark-gold.png')" }}
@@ -38,7 +51,7 @@ export function MenuScreen({
             Cotonou
           </div>
         </div>
-        <div className="mt-3.5 font-product font-bold text-white text-[22px] leading-tight">
+        <div className="mt-3.5 lg:mt-0 font-product font-bold text-white text-[22px] leading-tight">
           {greeting()} 👋 <span className="text-gold">on mange quoi ?</span>
         </div>
         <div className="flex gap-2.5 mt-4 overflow-x-auto pb-0.5">
@@ -56,7 +69,7 @@ export function MenuScreen({
         </div>
       </div>
 
-      <div className="p-4 pb-6 flex flex-col gap-3.5">
+      <div className="p-4 md:p-6 lg:p-8 pb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 md:gap-5">
         {filtered.map((p) => {
           const imageUrl = getMenuImageUrl(p.imagePath);
           return (
@@ -96,7 +109,7 @@ export function MenuScreen({
           );
         })}
         {filtered.length === 0 && (
-          <div className="text-center text-ink/60 py-10 text-sm">Aucun plat dans cette catégorie.</div>
+          <div className="col-span-full text-center text-ink/60 py-10 text-sm">Aucun plat dans cette catégorie.</div>
         )}
       </div>
     </div>

@@ -22,6 +22,7 @@ export interface Database {
           id: string;
           whatsapp_phone: string;
           full_name: string | null;
+          email: string | null;
           zone: string | null;
           address_details: string | null;
           delivery_lat: number | null;
