@@ -82,7 +82,7 @@ export function CuisineBoard() {
     fetchTickets();
     const supabase = createClient();
     const channel = supabase
-      .channel("cuisine-orders")
+      .channel(`cuisine-orders:${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => fetchTickets())
       .subscribe();
 

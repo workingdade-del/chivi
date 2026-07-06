@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 
+// Sans ceci, Next.js met en cache statique la réponse de ce GET (aucune
+// fonction dynamique utilisée dans le handler) : la commande resterait
+// figée à son statut du premier appel malgré les mises à jour en base.
+export const dynamic = "force-dynamic";
+
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const supabase = createServiceClient();
 

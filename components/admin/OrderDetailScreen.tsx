@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
@@ -29,6 +29,25 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
   const assignment = order.order_assignments?.[0];
   const driver = assignment?.drivers ?? null;
   const timelineIndex = clientTimelineIndex(order.status);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`admin-order-detail:${order.id}:${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders", filter: `id=eq.${order.id}` },
+        () => router.refresh()
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments" }, () => router.refresh())
+      .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, () => router.refresh())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id]);
 
   async function handleAssign() {
     if (!selectedDriver) return;

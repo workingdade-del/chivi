@@ -37,7 +37,7 @@ export function Sidebar() {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ""));
 
     const channel = supabase
-      .channel("admin-sidebar-orders")
+      .channel(`admin-sidebar-orders:${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, fetchCount)
       .subscribe();
 

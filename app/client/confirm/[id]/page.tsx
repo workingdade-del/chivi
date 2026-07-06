@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { formatFcfa } from "@/lib/format";
+import { createClient } from "@/lib/supabase/client";
 import type { OrderStatus } from "@/lib/supabase/types";
 import { CLIENT_TIMELINE, STATUS_LABELS, clientTimelineIndex } from "@/lib/order-status";
 
@@ -32,9 +33,27 @@ export default function ConfirmPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     fetchOrder();
-    const interval = setInterval(fetchOrder, 5000);
-    return () => clearInterval(interval);
-  }, [fetchOrder]);
+
+    // La clé anon n'a pas accès à `orders` (RLS) : on écoute un canal
+    // Broadcast dédié à cette commande (voir trigger broadcast_order_changes)
+    // plutôt qu'une souscription postgres_changes classique.
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`order:${params.id}`, { config: { private: true } })
+      .on("broadcast", { event: "UPDATE" }, (message) => {
+        const newRecord = (message.payload as { record?: Partial<OrderDetail> } | undefined)?.record;
+        if (newRecord) {
+          setOrder((prev) => (prev ? { ...prev, ...newRecord } : prev));
+        } else {
+          fetchOrder();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [params.id, fetchOrder]);
 
   async function advanceStatus() {
     setAdvancing(true);

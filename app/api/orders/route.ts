@@ -3,6 +3,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { buildOrderConfirmationMessage, normalizePhone, sendWhatsappText } from "@/lib/whatsapp";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
+export const dynamic = "force-dynamic";
+
 interface OrderLineInput {
   productId: string;
   productVariantId: string | null;

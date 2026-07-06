@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getOrders } from "@/lib/admin";
 import { STATUS_LABELS } from "@/lib/order-status";
 import { formatFcfa } from "@/lib/format";
+import { RealtimeRefresh } from "@/components/admin/RealtimeRefresh";
 import type { OrderStatus } from "@/lib/supabase/types";
 
 const FILTERS: { id: OrderStatus | "all"; label: string }[] = [
@@ -26,6 +27,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
 
   return (
     <div>
+      <RealtimeRefresh tables={["orders"]} />
       <div className="flex gap-2 mb-4">
         {FILTERS.map((f) => (
           <Link

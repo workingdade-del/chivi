@@ -69,7 +69,7 @@ export function ConversationsScreen() {
     fetchConversations();
     const supabase = createClient();
     const channel = supabase
-      .channel("admin-conversations")
+      .channel(`admin-conversations:${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_messages" }, (payload) => {
         fetchConversations();
         const row = (payload.new ?? payload.old) as { profile_id?: string } | null;
