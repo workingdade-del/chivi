@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, ClipboardList, MessagesSquare, Bike, UtensilsCrossed, BarChart3, Users } from "lucide-react";
+import { LayoutGrid, ClipboardList, MessagesSquare, Bike, UtensilsCrossed, BarChart3, Users, Boxes, Megaphone } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
@@ -12,6 +12,8 @@ const NAV = [
   { href: "/admin/conversations", label: "Conversations", icon: MessagesSquare, match: (p: string) => p.startsWith("/admin/conversations") },
   { href: "/admin/drivers", label: "Livreurs", icon: Bike, match: (p: string) => p.startsWith("/admin/drivers") },
   { href: "/admin/menu", label: "Gestion menu", icon: UtensilsCrossed, match: (p: string) => p.startsWith("/admin/menu") },
+  { href: "/admin/stocks", label: "Stocks", icon: Boxes, match: (p: string) => p.startsWith("/admin/stocks") },
+  { href: "/admin/marketing", label: "Marketing", icon: Megaphone, match: (p: string) => p.startsWith("/admin/marketing") },
   { href: "/admin/reports", label: "Rapports", icon: BarChart3, match: (p: string) => p.startsWith("/admin/reports") },
   { href: "/admin/clients", label: "Clients", icon: Users, match: (p: string) => p.startsWith("/admin/clients") },
 ];

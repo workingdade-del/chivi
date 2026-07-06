@@ -231,6 +231,17 @@ export interface Database {
         },
         "phone" | "message" | "send_at"
       >;
+      inventory_movements: Table<
+        {
+          id: string;
+          item_id: string;
+          item_name: string;
+          change_qty: number;
+          quantity_after: number;
+          created_at: string;
+        },
+        "item_id" | "item_name" | "change_qty" | "quantity_after"
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

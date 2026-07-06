@@ -12,6 +12,8 @@ const TITLES: { match: (p: string) => boolean; title: string; sub: string }[] = 
   { match: (p) => p.startsWith("/admin/conversations"), title: "Conversations", sub: "WhatsApp — IA et prises en main manuelles" },
   { match: (p) => p.startsWith("/admin/drivers"), title: "Livreurs", sub: "Disponibilité et courses en temps réel" },
   { match: (p) => p.startsWith("/admin/menu"), title: "Gestion du menu", sub: "Activer, désactiver et tarifer les plats" },
+  { match: (p) => p.startsWith("/admin/stocks"), title: "Stocks", sub: "Inventaire, alertes et mouvements" },
+  { match: (p) => p.startsWith("/admin/marketing"), title: "Marketing", sub: "Newsletter et notifications clients" },
   { match: (p) => p.startsWith("/admin/reports"), title: "Rapport financier", sub: "Revenus, coûts et marges" },
   { match: (p) => /^\/admin\/clients\/[^/]+$/.test(p), title: "Fiche client", sub: "Historique et dépenses" },
   { match: (p) => p.startsWith("/admin/clients"), title: "Clients", sub: "Profils créés automatiquement via WhatsApp" },
