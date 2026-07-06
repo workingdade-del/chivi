@@ -121,34 +121,34 @@ export function CuisineBoard() {
   const today = new Date(now).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
 
   return (
-    <div className="w-full h-screen bg-app-cuisine flex flex-col">
-      <div className="flex-none bg-chivi-black border-b border-[#2a1010] px-6 py-4 flex items-center justify-between gap-5">
-        <div className="flex items-center gap-5">
+    <div className="w-full h-full bg-app-cuisine flex flex-col">
+      <div className="flex-none bg-chivi-black border-b border-[#2a1010] px-4 sm:px-6 py-3.5 sm:py-4 flex flex-wrap items-center justify-between gap-3 sm:gap-5">
+        <div className="flex items-center gap-3 sm:gap-5">
           <div
-            className="w-[104px] h-8 bg-left bg-contain bg-no-repeat"
+            className="w-[88px] sm:w-[104px] h-7 sm:h-8 bg-left bg-contain bg-no-repeat"
             style={{ backgroundImage: "url('/brand_kit/assets/logo/chivi-wordmark-gold.png')" }}
           />
-          <div className="border-l border-[#3a1616] pl-5">
+          <div className="hidden sm:block border-l border-[#3a1616] pl-5">
             <div className="font-display text-white text-[17px] tracking-wide uppercase">
               Cuisine · Production
             </div>
             <div className="text-xs text-[#a07d6d] mt-0.5">Godomey Nonhouenou · Cotonou</div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <Counter label="En attente" value={counts.recue} color="#FFB600" pulse />
           <Counter label="En prépa" value={counts.en_preparation} color="#ff6a5c" />
           <Counter label="Prêtes" value={counts.prete} color="#4fd587" />
-          <div className="border-l border-[#3a1616] pl-4 ml-1 text-right">
+          <div className="hidden md:block border-l border-[#3a1616] pl-4 ml-1 text-right">
             <div className="font-mega text-white text-xl leading-none">{clock}</div>
             <div className="text-[11px] text-[#a07d6d] tracking-wide uppercase mt-0.5">{today}</div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-7">
+      <div className="flex-1 overflow-y-auto px-3 sm:px-6 pt-4 sm:pt-5 pb-7">
         {sorted.length > 0 && (
-          <div className="grid gap-4 items-start" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
             {sorted.map((t) => {
               const mins = elapsedMinutes(t.created_at, now);
               const urgent = mins >= 10 && t.status !== "prete";
@@ -203,7 +203,7 @@ export function CuisineBoard() {
                   )}
                   <button
                     onClick={() => advance(t.id, t.status)}
-                    className="mt-1 w-full py-[15px] rounded-xl font-bold text-[.98em]"
+                    className="mt-1 w-full min-h-[48px] py-[15px] rounded-xl font-bold text-[.98em]"
                     style={
                       t.status === "recue"
                         ? { background: "#FFB600", color: "#3a1500" }
@@ -229,11 +229,11 @@ export function CuisineBoard() {
 
       {openTicket && (
         <div
-          className="absolute inset-0 bg-black/70 flex items-center justify-center p-10 z-50"
+          className="fixed inset-0 bg-black/70 flex items-center justify-center p-0 md:p-10 z-50"
           onClick={() => setOpenId(null)}
         >
           <div
-            className="relative w-[560px] max-h-full overflow-auto bg-[#1d0e0e] border border-[#4a2020] rounded-[20px] p-7"
+            className="relative w-full h-full md:h-auto md:w-[560px] max-h-full overflow-auto bg-[#1d0e0e] border-0 md:border border-[#4a2020] rounded-none md:rounded-[20px] p-5 sm:p-7"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-0 left-0 right-0 h-1.5" style={{ background: STRIPE_COLOR[openTicket.status] }} />
@@ -286,7 +286,7 @@ export function CuisineBoard() {
             )}
             <button
               onClick={() => advance(openTicket.id, openTicket.status)}
-              className="mt-6 w-full py-[18px] rounded-2xl font-bold text-[17px]"
+              className="mt-6 w-full min-h-[52px] py-[18px] rounded-2xl font-bold text-[17px]"
               style={
                 openTicket.status === "recue"
                   ? { background: "#FFB600", color: "#3a1500" }

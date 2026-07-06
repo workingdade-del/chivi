@@ -160,6 +160,8 @@ export interface Database {
           label: string;
           category: ExpenseCategory;
           amount: number;
+          quantity: number | null;
+          unit_price: number | null;
           expense_date: string;
           note: string | null;
           created_at: string;
@@ -191,6 +193,30 @@ export interface Database {
           paused_by: string | null;
         },
         "id"
+      >;
+      inventory_items: Table<
+        {
+          id: string;
+          name: string;
+          quantity: number;
+          unit: string;
+          alert_threshold: number;
+          unit_price: number;
+          created_at: string;
+          updated_at: string;
+        },
+        "name"
+      >;
+      product_costs: Table<
+        {
+          product_id: string;
+          ingredient_cost: number;
+          packaging_cost: number;
+          total_cost: number;
+          notes: string | null;
+          updated_at: string;
+        },
+        "product_id"
       >;
     };
     Views: Record<string, never>;

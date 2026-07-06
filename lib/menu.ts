@@ -103,14 +103,4 @@ export async function getDeliveryZones(): Promise<MenuDeliveryZone[]> {
   return data.map((z) => ({ id: z.id, name: z.name, feeMin: z.fee_min, feeMax: z.fee_max }));
 }
 
-export const CATEGORY_LABELS: Record<ProductCategory, string> = {
-  plats_chivi: "Plats CHIVI",
-  plats_traditionnels: "Plats Traditionnels",
-  boissons: "Boissons",
-};
-
-export const CATEGORY_ORDER: ProductCategory[] = [
-  "plats_chivi",
-  "plats_traditionnels",
-  "boissons",
-];
+export { CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/product-categories";
