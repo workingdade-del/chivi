@@ -219,18 +219,6 @@ export interface Database {
         },
         "product_id"
       >;
-      scheduled_messages: Table<
-        {
-          id: string;
-          order_id: string | null;
-          phone: string;
-          message: string;
-          send_at: string;
-          sent: boolean;
-          created_at: string;
-        },
-        "phone" | "message" | "send_at"
-      >;
       inventory_movements: Table<
         {
           id: string;

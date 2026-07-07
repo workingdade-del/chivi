@@ -142,9 +142,9 @@ async function findDriverByPhone(phone: string): Promise<{ id: string; name: str
 
 /**
  * Un livreur clique "✅ Client livré" : commande → livrée, assignation →
- * livrée, livreur → libre, et on programme (via scheduled_messages, pas un
- * setTimeout — un serverless ne survit pas 5 minutes) le message de
- * feedback client 5 minutes plus tard.
+ * livrée, livreur → libre, et le message de feedback part immédiatement
+ * au client (Vercel Hobby n'autorise pas de cron plus fréquent qu'une
+ * fois par jour, donc pas de file d'attente différée ici).
  */
 async function handleDeliveryConfirmed(driver: { id: string; name: string }, orderId: string, driverPhone: string) {
   const supabase = createServiceClient();
@@ -171,12 +171,19 @@ async function handleDeliveryConfirmed(driver: { id: string; name: string }, ord
       .maybeSingle();
 
     if (profile) {
-      await supabase.from("scheduled_messages").insert({
-        order_id: orderId,
-        phone: profile.whatsapp_phone,
-        message: buildPostDeliveryFeedbackMessage(),
-        send_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-      });
+      try {
+        await sendWhatsappText(profile.whatsapp_phone, buildPostDeliveryFeedbackMessage());
+        await supabase.from("whatsapp_messages").insert({
+          profile_id: order.profile_id,
+          order_id: orderId,
+          direction: "outbound",
+          phone: profile.whatsapp_phone,
+          message_type: "text",
+          content: "Message de feedback post-livraison",
+        });
+      } catch (err) {
+        console.error("[whatsapp-webhook] failed to send post-delivery feedback message", err);
+      }
     }
   }
 
