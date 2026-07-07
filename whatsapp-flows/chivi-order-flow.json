@@ -2,40 +2,12 @@
   "version": "5.1",
   "data_api_version": "3.0",
   "routing_model": {
-    "WELCOME": ["CATEGORIES"],
     "CATEGORIES": ["PRODUCT_LIST"],
     "PRODUCT_LIST": ["PRODUCT_DETAIL"],
     "PRODUCT_DETAIL": ["CART"],
-    "CART": ["LOCALISATION"],
-    "LOCALISATION": []
+    "CART": []
   },
   "screens": [
-    {
-      "id": "WELCOME",
-      "title": "CHIVI",
-      "terminal": false,
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "TextHeading",
-            "text": "Bienvenue chez CHIVI 🍽️"
-          },
-          {
-            "type": "TextBody",
-            "text": "La cuillère ne ment jamais. Commande tes plats préférés directement ici, sans quitter WhatsApp."
-          },
-          {
-            "type": "Footer",
-            "label": "Voir le menu 🍽️",
-            "on-click-action": {
-              "name": "data_exchange",
-              "payload": { "trigger": "view_categories" }
-            }
-          }
-        ]
-      }
-    },
     {
       "id": "CATEGORIES",
       "title": "Catégories",
@@ -58,7 +30,7 @@
         "children": [
           {
             "type": "TextHeading",
-            "text": "Qu'est-ce qui te tente ?"
+            "text": "Bienvenue chez CHIVI 🍽️ Qu'est-ce qui te tente ?"
           },
           {
             "type": "RadioButtonsGroup",
@@ -231,7 +203,8 @@
     {
       "id": "CART",
       "title": "Mon panier",
-      "terminal": false,
+      "terminal": true,
+      "success": true,
       "data": {
         "cart_summary": { "type": "string", "__example__": "2× Spaghetti CHIVI — 2 000 FCFA" },
         "subtotal_label": { "type": "string", "__example__": "Sous-total : 2 000 FCFA" },
@@ -257,45 +230,8 @@
             "label": "Commander",
             "enabled": "${data.has_items}",
             "on-click-action": {
-              "name": "navigate",
-              "next": { "type": "screen", "name": "LOCALISATION" },
-              "payload": {}
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "LOCALISATION",
-      "title": "Livraison",
-      "terminal": true,
-      "success": true,
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "TextHeading",
-            "text": "Où livrer ta commande ?"
-          },
-          {
-            "type": "TextBody",
-            "text": "Décris ta position (quartier, repère…) ci-dessous. Tu peux aussi fermer ce formulaire et partager ta localisation WhatsApp directement dans la conversation (📎 → Localisation) pour plus de précision."
-          },
-          {
-            "type": "TextInput",
-            "name": "location_text",
-            "label": "Ta position",
-            "input-type": "text",
-            "required": true
-          },
-          {
-            "type": "Footer",
-            "label": "Continuer",
-            "on-click-action": {
               "name": "complete",
-              "payload": {
-                "location_text": "${form.location_text}"
-              }
+              "payload": {}
             }
           }
         ]

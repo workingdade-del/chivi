@@ -91,45 +91,16 @@ export async function sendWhatsappAvailabilityRequest(to: string, driverName: st
   return res.json();
 }
 
-/** Message interactif générique avec jusqu'à 3 boutons de réponse rapide. Serveur uniquement. */
-export async function sendWhatsappButtonMessage(to: string, bodyText: string, buttons: { id: string; title: string }[]) {
-  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: normalizePhone(to),
-      type: "interactive",
-      interactive: {
-        type: "button",
-        body: { text: bodyText },
-        action: {
-          buttons: buttons.map((b) => ({ type: "reply", reply: b })),
-        },
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
-  }
-
-  return res.json();
-}
-
-export const LOCATION_CONFIRM_BUTTON_PREFIX = "loc_confirm:";
-export const LOCATION_REJECT_BUTTON_PREFIX = "loc_reject:";
-
 export function buildLocationConfirmationMessage(address: string): string {
-  return `📍 J'ai détecté votre position : ${address}\nEst-ce bien votre localisation ?`;
+  return `📍 J'ai détecté votre position : ${address}\nEst-ce bien votre lieu de livraison ?\nRépondez OUI pour confirmer ou décrivez mieux votre position.`;
 }
 
-export function buildLocationLowConfidenceMessage(): string {
-  return "🤔 Je ne suis pas sûr de votre emplacement.\nPouvez-vous envoyer votre localisation WhatsApp directement ? (📎 → Localisation)";
+export function buildLocationNotFoundMessage(): string {
+  return "🤔 Je n'ai pas trouvé cet endroit précisément.\nPouvez-vous envoyer votre localisation WhatsApp ?\n(Appuyez sur 📎 puis choisissez Localisation)";
+}
+
+export function buildLocationRequestMessage(): string {
+  return "Parfait, ta commande est enregistrée ! 📍 Décris ta position (quartier, repère…) ou envoie ta localisation WhatsApp (📎 → Localisation) pour qu'on calcule les frais de livraison.";
 }
 
 /** Envoie le WhatsApp Flow de commande CHIVI. flowToken identifie la session (panier) côté data endpoint. Serveur uniquement. */
@@ -160,7 +131,7 @@ export async function sendWhatsappFlow(to: string, flowToken: string) {
             flow_id: flowId,
             flow_cta: "Commander",
             flow_action: "navigate",
-            flow_action_payload: { screen: "WELCOME" },
+            flow_action_payload: { screen: "CATEGORIES" },
           },
         },
       },

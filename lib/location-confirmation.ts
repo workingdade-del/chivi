@@ -1,27 +1,62 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { reverseGeocode, searchPlace } from "@/lib/google-maps";
+import { reverseGeocode, searchPlace } from "@/lib/nominatim";
 import { extractLocationFromText } from "@/lib/location-ai";
 import { haversineKm, computeDeliveryFee, KITCHEN_ORIGIN } from "@/lib/distance";
 import { createOrderFromFlowCart, type FlowCartState } from "@/lib/create-order-from-flow";
 import {
   sendWhatsappText,
-  sendWhatsappButtonMessage,
   buildLocationConfirmationMessage,
-  buildLocationLowConfidenceMessage,
+  buildLocationNotFoundMessage,
   buildDeliveryFeeMessage,
   buildDeliveryFeePendingMessage,
   buildDriverQuoteRequestMessage,
-  LOCATION_CONFIRM_BUTTON_PREFIX,
-  LOCATION_REJECT_BUTTON_PREFIX,
 } from "@/lib/whatsapp";
+
+const GENERIC_GPS_ADDRESS = "Position partagée via GPS";
+
+/** Y a-t-il une confirmation d'adresse en attente pour ce numéro ? Détermine si le prochain texte doit être routé vers handleLocationTextReply. */
+export async function getPendingConfirmationId(phone: string): Promise<string | null> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("pending_location_confirmations")
+    .select("id")
+    .eq("phone", phone)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+/** Une session Flow attend-elle la position de livraison de ce client ? */
+export async function getAwaitingLocationFlowToken(phone: string): Promise<string | null> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("flow_sessions")
+    .select("flow_token")
+    .eq("phone", phone)
+    .eq("status", "awaiting_location")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.flow_token ?? null;
+}
+
+/** "oui" / "ok" (accents et casse ignorés) — confirmation en texte libre plutôt qu'un bouton. */
+export function isOuiConfirmation(text: string): boolean {
+  const normalized = text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+  return normalized === "oui" || normalized === "ok" || normalized.startsWith("oui ");
+}
 
 /**
  * Calcule et applique le tarif une fois la position définitivement retenue
- * (soit confirmée par le client, soit — sans clé Google Maps configurée —
- * directement, comme avant l'ajout de l'étape de confirmation). Si la
- * position provient d'un WhatsApp Flow (flowToken renseigné), la commande
- * est finalisée directement à partir du panier de la session au lieu de
- * simplement annoncer le tarif.
+ * (après confirmation "OUI"). Si la position provient d'un WhatsApp Flow
+ * (flowToken renseigné), la commande est finalisée directement à partir du
+ * panier de la session au lieu de simplement annoncer le tarif.
  */
 async function applyDeliveryFee(
   phone: string,
@@ -102,9 +137,11 @@ async function finalizeFlowOrder(
     deliveryLng: lng,
     deliveryFee: fee,
   });
+
+  await supabase.from("flow_sessions").update({ status: "completed" }).eq("flow_token", flowToken);
 }
 
-/** Position GPS partagée nativement sur WhatsApp : reverse-geocode + demande de confirmation. */
+/** Position GPS partagée nativement sur WhatsApp : reverse-geocode Nominatim + demande de confirmation texte ("OUI"). */
 export async function handleGpsLocation(profileId: string | null, phone: string, lat: number, lng: number, flowToken: string | null = null) {
   const supabase = createServiceClient();
   if (profileId) {
@@ -112,18 +149,14 @@ export async function handleGpsLocation(profileId: string | null, phone: string,
   }
 
   const geocoded = await reverseGeocode(lat, lng);
-  if (!geocoded) {
-    // Dégradation gracieuse : sans clé Google Maps, comportement direct (pas de confirmation possible sans adresse lisible).
-    await applyDeliveryFee(phone, lat, lng, profileId, flowToken, "Position GPS");
-    return;
-  }
+  const address = geocoded?.address ?? GENERIC_GPS_ADDRESS;
 
   const { data: row } = await supabase
     .from("pending_location_confirmations")
     .insert({
       profile_id: profileId,
       phone,
-      candidate_address: geocoded.address,
+      candidate_address: address,
       candidate_lat: lat,
       candidate_lng: lng,
       source: "gps",
@@ -135,39 +168,32 @@ export async function handleGpsLocation(profileId: string | null, phone: string,
   if (!row) return;
 
   try {
-    await sendWhatsappButtonMessage(phone, buildLocationConfirmationMessage(geocoded.address), [
-      { id: `${LOCATION_CONFIRM_BUTTON_PREFIX}${row.id}`, title: "✅ Oui, confirmer" },
-      { id: `${LOCATION_REJECT_BUTTON_PREFIX}${row.id}`, title: "❌ Non, corriger" },
-    ]);
+    await sendWhatsappText(phone, buildLocationConfirmationMessage(address));
   } catch (err) {
     console.error("[location-confirmation] failed to send GPS confirmation message", err);
   }
 }
 
-/** Description libre (texte ou audio transcrit) : Groq identifie le lieu, Google Places le recherche, on redemande confirmation. */
+/** Description libre (texte ou audio transcrit) : Groq identifie le lieu, Nominatim le recherche, on redemande confirmation ("OUI"). */
 export async function handleTextLocation(profileId: string | null, phone: string, text: string, flowToken: string | null = null) {
   const extracted = await extractLocationFromText(text);
   if (!extracted) {
     try {
-      await sendWhatsappText(phone, buildLocationLowConfidenceMessage());
+      await sendWhatsappText(phone, buildLocationNotFoundMessage());
     } catch (err) {
-      console.error("[location-confirmation] failed to send low-confidence message", err);
+      console.error("[location-confirmation] failed to send not-found message", err);
     }
     return;
   }
 
-  const searchQuery = extracted.landmark || extracted.quartier || extracted.lieu || text;
+  const searchQuery = extracted.rechercheNominatim || extracted.quartier || extracted.lieu || text;
   const place = await searchPlace(searchQuery);
 
-  const lat = place?.lat ?? extracted.lat;
-  const lng = place?.lng ?? extracted.lng;
-  const address = place?.address || extracted.lieu;
-
-  if (lat === null || lng === null || !address) {
+  if (!place) {
     try {
-      await sendWhatsappText(phone, buildLocationLowConfidenceMessage());
+      await sendWhatsappText(phone, buildLocationNotFoundMessage());
     } catch (err) {
-      console.error("[location-confirmation] failed to send low-confidence message", err);
+      console.error("[location-confirmation] failed to send not-found message", err);
     }
     return;
   }
@@ -178,9 +204,9 @@ export async function handleTextLocation(profileId: string | null, phone: string
     .insert({
       profile_id: profileId,
       phone,
-      candidate_address: address,
-      candidate_lat: lat,
-      candidate_lng: lng,
+      candidate_address: place.address,
+      candidate_lat: place.lat,
+      candidate_lng: place.lng,
       source: "text",
       flow_token: flowToken,
     })
@@ -190,17 +216,19 @@ export async function handleTextLocation(profileId: string | null, phone: string
   if (!row) return;
 
   try {
-    await sendWhatsappButtonMessage(phone, buildLocationConfirmationMessage(address), [
-      { id: `${LOCATION_CONFIRM_BUTTON_PREFIX}${row.id}`, title: "✅ Oui, confirmer" },
-      { id: `${LOCATION_REJECT_BUTTON_PREFIX}${row.id}`, title: "❌ Non, corriger" },
-    ]);
+    await sendWhatsappText(phone, buildLocationConfirmationMessage(place.address));
   } catch (err) {
     console.error("[location-confirmation] failed to send text-location confirmation message", err);
   }
 }
 
-/** Le client répond ✅/❌ à la proposition d'adresse. */
-export async function handleLocationConfirmationReply(confirmationId: string, confirmed: boolean, phone: string) {
+/**
+ * Le client répond à la proposition d'adresse en texte libre : "OUI" (ou
+ * variante) confirme, tout autre texte est traité comme une description
+ * corrigée qui relance la détection (Groq + Nominatim) sur cette nouvelle
+ * description.
+ */
+export async function handleLocationTextReply(confirmationId: string, phone: string, replyText: string) {
   const supabase = createServiceClient();
   const { data: row } = await supabase
     .from("pending_location_confirmations")
@@ -210,24 +238,21 @@ export async function handleLocationConfirmationReply(confirmationId: string, co
 
   if (!row || row.status !== "pending") return;
 
-  if (!confirmed) {
-    await supabase.from("pending_location_confirmations").update({ status: "rejected" }).eq("id", confirmationId);
-    try {
-      await sendWhatsappText(phone, "D'accord, décris-moi à nouveau ta position ou envoie ta localisation WhatsApp 📍");
-    } catch (err) {
-      console.error("[location-confirmation] failed to send rejection reply", err);
+  if (isOuiConfirmation(replyText)) {
+    await supabase.from("pending_location_confirmations").update({ status: "confirmed" }).eq("id", confirmationId);
+
+    if (row.profile_id) {
+      await supabase
+        .from("profiles")
+        .update({ delivery_lat: row.candidate_lat, delivery_lng: row.candidate_lng, address_details: row.candidate_address })
+        .eq("id", row.profile_id);
     }
+
+    await applyDeliveryFee(phone, row.candidate_lat, row.candidate_lng, row.profile_id, row.flow_token, row.candidate_address);
     return;
   }
 
-  await supabase.from("pending_location_confirmations").update({ status: "confirmed" }).eq("id", confirmationId);
-
-  if (row.profile_id) {
-    await supabase
-      .from("profiles")
-      .update({ delivery_lat: row.candidate_lat, delivery_lng: row.candidate_lng, address_details: row.candidate_address })
-      .eq("id", row.profile_id);
-  }
-
-  await applyDeliveryFee(phone, row.candidate_lat, row.candidate_lng, row.profile_id, row.flow_token, row.candidate_address);
+  // Pas "OUI" : le client décrit mieux sa position — on relance la détection sur ce nouveau texte.
+  await supabase.from("pending_location_confirmations").update({ status: "rejected" }).eq("id", confirmationId);
+  await handleTextLocation(row.profile_id, phone, replyText, row.flow_token);
 }

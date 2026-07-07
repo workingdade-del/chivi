@@ -48,7 +48,7 @@ export async function transcribeAudio(buffer: Buffer, mimeType: string): Promise
     model: WHISPER_MODEL,
     language: "fr",
     prompt:
-      "Transcription d'un message vocal en français ou fongbé. Contexte: client d'un restaurant de livraison à Cotonou, Bénin. Noms de quartiers possibles: Godomey, Akpakpa, Cadjehoun, Fidjrossè, Agla, Sainte Rita, Menontin, Zogbohouè, Abomey-Calavi, Calavi, Togba, Kpanroun, Aïdjèdo, Jéricho, Sikècodji.",
+      "Transcription française. Restaurant livraison Cotonou Bénin. Quartiers: Godomey, Akpakpa, Cadjehoun, Fidjrossè, Agla, Sainte Rita, Menontin, Zogbohouè, Abomey-Calavi, Togba, Kpanroun, Aïdjèdo, Jéricho, Sikècodji, Dantokpa, Gbégamey, Haie Vive, Cocotiers, Cotonou centre, Guinkomey.",
   });
 
   return transcription.text.trim();

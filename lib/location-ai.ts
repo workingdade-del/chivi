@@ -5,16 +5,15 @@ const GROQ_MODEL = "llama-3.1-8b-instant";
 export interface ExtractedLocation {
   lieu: string;
   quartier: string;
-  landmark: string;
-  lat: number | null;
-  lng: number | null;
+  rechercheNominatim: string;
 }
 
 /**
- * Demande à Groq d'identifier un lieu de livraison à Cotonou/Abomey-Calavi
- * depuis une description libre (texte ou audio transcrit). Retourne null
- * si GROQ_API_KEY absente ou si la réponse n'est pas un JSON exploitable —
- * dans ce cas l'appelant doit retomber sur "envoyez votre position GPS".
+ * Demande à Groq d'identifier un lieu de livraison à Cotonou, Bénin depuis
+ * une description libre (texte ou audio transcrit). `rechercheNominatim`
+ * est la requête à passer telle quelle à Nominatim. Retourne null si
+ * GROQ_API_KEY absente ou si la réponse n'est pas un JSON exploitable —
+ * dans ce cas l'appelant doit demander la localisation GPS.
  */
 export async function extractLocationFromText(text: string): Promise<ExtractedLocation | null> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -23,7 +22,7 @@ export async function extractLocationFromText(text: string): Promise<ExtractedLo
     return null;
   }
 
-  const prompt = `Tu es un assistant de livraison à Cotonou, Bénin. Le client décrit son lieu de livraison : '${text}'. Identifie le quartier, le landmark ou l'adresse précise à Cotonou ou Abomey-Calavi. Réponds uniquement en JSON strict, sans texte autour : {"lieu": "", "quartier": "", "landmark": "", "coordonnees_estimees": {"lat": null, "lng": null}}`;
+  const prompt = `Tu es un assistant de livraison à Cotonou, Bénin. Le client décrit son lieu : '${text}'. Identifie le quartier ou landmark précis. Réponds UNIQUEMENT en JSON : {lieu: '', quartier: '', recherche_nominatim: ''}`;
 
   try {
     const groq = new Groq({ apiKey });
@@ -43,19 +42,13 @@ export async function extractLocationFromText(text: string): Promise<ExtractedLo
     const parsed = JSON.parse(jsonMatch[0]) as {
       lieu?: string;
       quartier?: string;
-      landmark?: string;
-      coordonnees_estimees?: { lat?: number | string | null; lng?: number | string | null };
+      recherche_nominatim?: string;
     };
-
-    const lat = parsed.coordonnees_estimees?.lat;
-    const lng = parsed.coordonnees_estimees?.lng;
 
     return {
       lieu: parsed.lieu ?? "",
       quartier: parsed.quartier ?? "",
-      landmark: parsed.landmark ?? "",
-      lat: lat !== undefined && lat !== null && lat !== "" ? Number(lat) : null,
-      lng: lng !== undefined && lng !== null && lng !== "" ? Number(lng) : null,
+      rechercheNominatim: parsed.recherche_nominatim ?? "",
     };
   } catch (err) {
     console.error("[location-ai] extractLocationFromText FAILED", err);

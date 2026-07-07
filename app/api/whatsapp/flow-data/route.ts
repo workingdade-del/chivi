@@ -57,15 +57,11 @@ async function handleAction(payload: {
   const flowToken = payload.flow_token ?? "";
 
   if (payload.action === "INIT") {
-    return { screen: "WELCOME", data: {} };
-  }
-
-  const trigger = (payload.data?.trigger as string) ?? "";
-
-  if (trigger === "view_categories") {
     const categories = Object.entries(CATEGORY_LABELS).map(([id, title]) => ({ id, title }));
     return { screen: "CATEGORIES", data: { categories } };
   }
+
+  const trigger = (payload.data?.trigger as string) ?? "";
 
   if (trigger === "select_category") {
     const categoryId = payload.data?.category_id as ProductCategory;
@@ -181,7 +177,7 @@ async function handleAction(payload: {
   }
 
   console.warn("[flow-data] unrecognized trigger/action", { action: payload.action, trigger, screen: payload.screen });
-  return { screen: payload.screen ?? "WELCOME", data: {} };
+  return { screen: payload.screen ?? "CATEGORIES", data: {} };
 }
 
 export async function POST(req: NextRequest) {

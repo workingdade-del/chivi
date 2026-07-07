@@ -4,11 +4,10 @@ import {
   DRIVER_AVAILABLE_BUTTON_ID,
   DRIVER_UNAVAILABLE_BUTTON_ID,
   DELIVERY_DONE_BUTTON_PREFIX,
-  LOCATION_CONFIRM_BUTTON_PREFIX,
-  LOCATION_REJECT_BUTTON_PREFIX,
   buildPauseAutoReply,
   buildPostDeliveryFeedbackMessage,
   buildDeliveryFeeConfirmedMessage,
+  buildLocationRequestMessage,
   downloadWhatsappMedia,
   normalizePhone,
   sendWhatsappText,
@@ -20,7 +19,13 @@ import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
 import { sanitizeText } from "@/lib/sanitize";
 import { isRateLimited } from "@/lib/rate-limit";
 import { verifyMetaSignature } from "@/lib/webhook-security";
-import { handleGpsLocation, handleLocationConfirmationReply, handleTextLocation } from "@/lib/location-confirmation";
+import {
+  handleGpsLocation,
+  handleTextLocation,
+  handleLocationTextReply,
+  getPendingConfirmationId,
+  getAwaitingLocationFlowToken,
+} from "@/lib/location-confirmation";
 
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
@@ -129,7 +134,7 @@ async function handleAiReply(profileId: string, phone: string) {
   }
 }
 
-const FLOW_TRIGGER_KEYWORDS = ["menu", "commander", "commande"];
+const FLOW_TRIGGER_KEYWORDS = ["menu", "commander", "commande", "je veux", "carte"];
 
 /** "menu" / "commander" / "commande" déclenche l'envoi du WhatsApp Flow de commande in-app. */
 function isFlowTrigger(text: string): boolean {
@@ -159,28 +164,23 @@ async function handleFlowTrigger(profileId: string | null, phone: string) {
 }
 
 /**
- * Le Flow se termine (écran LOCALISATION, action "complete") : Meta renvoie
- * un message interactif nfm_reply dans le webhook normal des messages (pas
- * le data endpoint). On récupère le texte de localisation saisi et on le
- * fait passer par le même pipeline IA (Groq + Google Places + confirmation)
- * que la description libre en chat classique, en le reliant au flow_token
- * pour que la confirmation finalise directement la commande.
+ * Le Flow se termine (écran CART, bouton "Commander", action "complete") :
+ * Meta renvoie un message interactif nfm_reply dans le webhook normal des
+ * messages (pas le data endpoint). Le Flow ne collecte pas la position —
+ * on la demande ensuite en chat classique, et on marque la session comme
+ * "awaiting_location" pour que le prochain message de ce client soit
+ * traité comme sa position de livraison plutôt qu'une conversation IA.
  */
-async function handleFlowCompletion(profileId: string | null, phone: string, nfmReply: { response_json: string }) {
+async function handleFlowCompletion(phone: string, nfmReply: { response_json: string }) {
   try {
-    const responseData = JSON.parse(nfmReply.response_json) as { location_text?: string; flow_token?: string };
-    const locationText = responseData.location_text;
-    if (!locationText) {
-      console.warn("[whatsapp-webhook] flow completion has no location_text", { phone });
-      return;
-    }
+    const responseData = JSON.parse(nfmReply.response_json) as { flow_token?: string };
 
     // Le flow_token n'est pas garanti d'être répété dans response_json selon
     // la config du Flow — on retombe sur la session la plus récente pour ce
     // numéro, qui est en pratique la session panier qui vient de se terminer.
     let flowToken = responseData.flow_token ?? null;
+    const supabase = createServiceClient();
     if (!flowToken) {
-      const supabase = createServiceClient();
       const { data: recentSession } = await supabase
         .from("flow_sessions")
         .select("flow_token")
@@ -191,7 +191,18 @@ async function handleFlowCompletion(profileId: string | null, phone: string, nfm
       flowToken = recentSession?.flow_token ?? null;
     }
 
-    await handleTextLocation(profileId, phone, locationText, flowToken);
+    if (!flowToken) {
+      console.warn("[whatsapp-webhook] flow completion but no flow_session found", { phone });
+      return;
+    }
+
+    await supabase.from("flow_sessions").update({ status: "awaiting_location" }).eq("flow_token", flowToken);
+
+    try {
+      await sendWhatsappText(phone, buildLocationRequestMessage());
+    } catch (err) {
+      console.error("[whatsapp-webhook] failed to send location request message", err);
+    }
   } catch (err) {
     console.error("[whatsapp-webhook] failed to handle flow completion", err);
   }
@@ -525,6 +536,12 @@ export async function POST(req: NextRequest) {
 
         console.log("[whatsapp-webhook] message saved OK", { waMessageId: message.id, profileId: profile?.id });
 
+        const pendingConfirmationId = messageContent && message.type === "text" ? await getPendingConfirmationId(phone) : null;
+        const awaitingLocationFlowToken =
+          !pendingConfirmationId && (message.type === "text" || message.type === "location")
+            ? await getAwaitingLocationFlowToken(phone)
+            : null;
+
         if (isPaused) {
           console.log("[whatsapp-webhook] system is paused, sending pause auto-reply", { profileId: profile?.id });
           try {
@@ -540,19 +557,18 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error("[whatsapp-webhook] pause auto-reply FAILED", err);
           }
+        } else if (pendingConfirmationId && messageContent) {
+          console.log("[whatsapp-webhook] customer replying to a pending location confirmation", { profileId: profile?.id });
+          await handleLocationTextReply(pendingConfirmationId, phone, messageContent);
         } else if (message.type === "location" && message.location) {
           console.log("[whatsapp-webhook] customer shared location, requesting confirmation", { profileId: profile?.id });
-          await handleGpsLocation(profile?.id ?? null, phone, message.location.latitude, message.location.longitude);
+          await handleGpsLocation(profile?.id ?? null, phone, message.location.latitude, message.location.longitude, awaitingLocationFlowToken);
         } else if (message.type === "interactive" && message.interactive?.type === "nfm_reply" && message.interactive.nfm_reply) {
           console.log("[whatsapp-webhook] WhatsApp Flow completed", { profileId: profile?.id });
-          await handleFlowCompletion(profile?.id ?? null, phone, message.interactive.nfm_reply);
-        } else if (message.type === "interactive" && message.interactive?.type === "button_reply") {
-          const buttonId = message.interactive.button_reply?.id ?? "";
-          if (buttonId.startsWith(LOCATION_CONFIRM_BUTTON_PREFIX)) {
-            await handleLocationConfirmationReply(buttonId.slice(LOCATION_CONFIRM_BUTTON_PREFIX.length), true, phone);
-          } else if (buttonId.startsWith(LOCATION_REJECT_BUTTON_PREFIX)) {
-            await handleLocationConfirmationReply(buttonId.slice(LOCATION_REJECT_BUTTON_PREFIX.length), false, phone);
-          }
+          await handleFlowCompletion(phone, message.interactive.nfm_reply);
+        } else if (awaitingLocationFlowToken && messageContent && (message.type === "text" || message.type === "audio")) {
+          console.log("[whatsapp-webhook] customer replying with delivery location after Flow checkout", { profileId: profile?.id });
+          await handleTextLocation(profile?.id ?? null, phone, messageContent, awaitingLocationFlowToken);
         } else if (messageContent && message.type === "text" && isFlowTrigger(messageContent)) {
           console.log("[whatsapp-webhook] flow trigger keyword detected, sending WhatsApp Flow", { profileId: profile?.id });
           await handleFlowTrigger(profile?.id ?? null, phone);

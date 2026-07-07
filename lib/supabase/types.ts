@@ -281,6 +281,7 @@ export interface Database {
           delivery_lat: number | null;
           delivery_lng: number | null;
           delivery_fee: number | null;
+          status: "cart" | "awaiting_location" | "completed";
           created_at: string;
           updated_at: string;
         },
