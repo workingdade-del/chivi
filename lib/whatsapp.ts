@@ -91,6 +91,90 @@ export async function sendWhatsappAvailabilityRequest(to: string, driverName: st
   return res.json();
 }
 
+/** Message interactif générique avec jusqu'à 3 boutons de réponse rapide. Serveur uniquement. */
+export async function sendWhatsappButtonMessage(to: string, bodyText: string, buttons: { id: string; title: string }[]) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: bodyText },
+        action: {
+          buttons: buttons.map((b) => ({ type: "reply", reply: b })),
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
+export const LOCATION_CONFIRM_BUTTON_PREFIX = "loc_confirm:";
+export const LOCATION_REJECT_BUTTON_PREFIX = "loc_reject:";
+
+export function buildLocationConfirmationMessage(address: string): string {
+  return `📍 J'ai détecté votre position : ${address}\nEst-ce bien votre localisation ?`;
+}
+
+export function buildLocationLowConfidenceMessage(): string {
+  return "🤔 Je ne suis pas sûr de votre emplacement.\nPouvez-vous envoyer votre localisation WhatsApp directement ? (📎 → Localisation)";
+}
+
+/** Envoie le WhatsApp Flow de commande CHIVI. flowToken identifie la session (panier) côté data endpoint. Serveur uniquement. */
+export async function sendWhatsappFlow(to: string, flowToken: string) {
+  const flowId = process.env.WHATSAPP_FLOW_ID;
+  if (!flowId) {
+    throw new Error("WHATSAPP_FLOW_ID n'est pas configurée");
+  }
+
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "flow",
+        body: { text: "Commande tes plats CHIVI directement ici 🍽️" },
+        action: {
+          name: "flow",
+          parameters: {
+            flow_message_version: "3",
+            flow_token: flowToken,
+            flow_id: flowId,
+            flow_cta: "Commander",
+            flow_action: "navigate",
+            flow_action_payload: { screen: "WELCOME" },
+          },
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
 export const DELIVERY_DONE_BUTTON_PREFIX = "delivery_done:";
 
 /** Message livreur à l'assignation : adresse + montant à collecter + bouton "Client livré". Serveur uniquement. */

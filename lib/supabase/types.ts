@@ -256,6 +256,36 @@ export interface Database {
         },
         "phone" | "distance_km"
       >;
+      pending_location_confirmations: Table<
+        {
+          id: string;
+          profile_id: string | null;
+          phone: string;
+          candidate_address: string;
+          candidate_lat: number;
+          candidate_lng: number;
+          source: "gps" | "text";
+          status: "pending" | "confirmed" | "rejected";
+          flow_token: string | null;
+          created_at: string;
+        },
+        "phone" | "candidate_address" | "candidate_lat" | "candidate_lng" | "source"
+      >;
+      flow_sessions: Table<
+        {
+          flow_token: string;
+          profile_id: string | null;
+          phone: string;
+          cart: unknown;
+          delivery_address: string | null;
+          delivery_lat: number | null;
+          delivery_lng: number | null;
+          delivery_fee: number | null;
+          created_at: string;
+          updated_at: string;
+        },
+        "phone"
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

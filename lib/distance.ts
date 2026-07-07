@@ -1,4 +1,4 @@
-export const KITCHEN_ORIGIN = { lat: 6.3676, lng: 2.3559 }; // Godomey Nonhouenou
+export const KITCHEN_ORIGIN = { lat: 6.395904, lng: 2.352314 }; // Godomey Nonhouenou
 
 /** Distance à vol d'oiseau (km) — suffisant pour une estimation de tarif de livraison. */
 export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {

@@ -4,23 +4,23 @@ import {
   DRIVER_AVAILABLE_BUTTON_ID,
   DRIVER_UNAVAILABLE_BUTTON_ID,
   DELIVERY_DONE_BUTTON_PREFIX,
+  LOCATION_CONFIRM_BUTTON_PREFIX,
+  LOCATION_REJECT_BUTTON_PREFIX,
   buildPauseAutoReply,
   buildPostDeliveryFeedbackMessage,
-  buildDeliveryFeeMessage,
-  buildDeliveryFeePendingMessage,
-  buildDriverQuoteRequestMessage,
   buildDeliveryFeeConfirmedMessage,
   downloadWhatsappMedia,
   normalizePhone,
   sendWhatsappText,
+  sendWhatsappFlow,
 } from "@/lib/whatsapp";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
 import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
-import { KITCHEN_ORIGIN, haversineKm, computeDeliveryFee } from "@/lib/distance";
 import { sanitizeText } from "@/lib/sanitize";
 import { isRateLimited } from "@/lib/rate-limit";
 import { verifyMetaSignature } from "@/lib/webhook-security";
+import { handleGpsLocation, handleLocationConfirmationReply, handleTextLocation } from "@/lib/location-confirmation";
 
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
@@ -64,6 +64,7 @@ interface WhatsappMessage {
   interactive?: {
     type: string;
     button_reply?: { id: string; title: string };
+    nfm_reply?: { response_json: string; body: string; name: string };
   };
 }
 
@@ -125,6 +126,74 @@ async function handleAiReply(profileId: string, phone: string) {
     }
   } catch (err) {
     console.error("[whatsapp-webhook] AI reply FAILED", { profileId, phone, error: err });
+  }
+}
+
+const FLOW_TRIGGER_KEYWORDS = ["menu", "commander", "commande"];
+
+/** "menu" / "commander" / "commande" déclenche l'envoi du WhatsApp Flow de commande in-app. */
+function isFlowTrigger(text: string): boolean {
+  const normalized = text.toLowerCase().trim();
+  return FLOW_TRIGGER_KEYWORDS.some((k) => normalized.includes(k));
+}
+
+/** Crée une session panier (flow_sessions) et envoie le Flow. Ne doit jamais faire échouer le webhook. */
+async function handleFlowTrigger(profileId: string | null, phone: string) {
+  const supabase = createServiceClient();
+  const { data: session, error } = await supabase
+    .from("flow_sessions")
+    .insert({ profile_id: profileId, phone, cart: { lines: [], currentCategory: null } })
+    .select("flow_token")
+    .single();
+
+  if (error || !session) {
+    console.error("[whatsapp-webhook] failed to create flow_session", error);
+    return;
+  }
+
+  try {
+    await sendWhatsappFlow(phone, session.flow_token);
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to send WhatsApp Flow", err);
+  }
+}
+
+/**
+ * Le Flow se termine (écran LOCALISATION, action "complete") : Meta renvoie
+ * un message interactif nfm_reply dans le webhook normal des messages (pas
+ * le data endpoint). On récupère le texte de localisation saisi et on le
+ * fait passer par le même pipeline IA (Groq + Google Places + confirmation)
+ * que la description libre en chat classique, en le reliant au flow_token
+ * pour que la confirmation finalise directement la commande.
+ */
+async function handleFlowCompletion(profileId: string | null, phone: string, nfmReply: { response_json: string }) {
+  try {
+    const responseData = JSON.parse(nfmReply.response_json) as { location_text?: string; flow_token?: string };
+    const locationText = responseData.location_text;
+    if (!locationText) {
+      console.warn("[whatsapp-webhook] flow completion has no location_text", { phone });
+      return;
+    }
+
+    // Le flow_token n'est pas garanti d'être répété dans response_json selon
+    // la config du Flow — on retombe sur la session la plus récente pour ce
+    // numéro, qui est en pratique la session panier qui vient de se terminer.
+    let flowToken = responseData.flow_token ?? null;
+    if (!flowToken) {
+      const supabase = createServiceClient();
+      const { data: recentSession } = await supabase
+        .from("flow_sessions")
+        .select("flow_token")
+        .eq("phone", phone)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      flowToken = recentSession?.flow_token ?? null;
+    }
+
+    await handleTextLocation(profileId, phone, locationText, flowToken);
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to handle flow completion", err);
   }
 }
 
@@ -191,61 +260,6 @@ async function handleDeliveryConfirmed(driver: { id: string; name: string }, ord
     await sendWhatsappText(driverPhone, `Merci ${driver.name}, livraison confirmée ✅. Bonne route !`);
   } catch (err) {
     console.error("[whatsapp-webhook] failed to send delivery confirmation to driver", err);
-  }
-}
-
-/**
- * Un client partage sa position WhatsApp : on calcule la distance depuis
- * la cuisine (Godomey Nonhouenou) et on applique la grille tarifaire. Au-
- * delà de 15km, pas de devinette : on prévient le client qu'on vérifie,
- * et on demande confirmation du tarif à un livreur disponible.
- */
-async function handleCustomerLocation(profileId: string, phone: string, lat: number, lng: number) {
-  const supabase = createServiceClient();
-  const distanceKm = haversineKm(KITCHEN_ORIGIN.lat, KITCHEN_ORIGIN.lng, lat, lng);
-  const { fee, needsConfirmation } = computeDeliveryFee(distanceKm);
-
-  await supabase.from("profiles").update({ delivery_lat: lat, delivery_lng: lng }).eq("id", profileId);
-
-  if (!needsConfirmation && fee !== null) {
-    try {
-      await sendWhatsappText(phone, buildDeliveryFeeMessage(distanceKm, fee));
-    } catch (err) {
-      console.error("[whatsapp-webhook] failed to send delivery fee message", err);
-    }
-    return;
-  }
-
-  try {
-    await sendWhatsappText(phone, buildDeliveryFeePendingMessage());
-  } catch (err) {
-    console.error("[whatsapp-webhook] failed to send delivery fee pending message", err);
-  }
-
-  const { data: drivers } = await supabase
-    .from("drivers")
-    .select("id, name, phone")
-    .eq("is_active", true)
-    .eq("is_available", true)
-    .eq("status", "libre");
-
-  const driver = drivers?.[0];
-  if (!driver) {
-    console.warn("[whatsapp-webhook] no available driver to confirm out-of-range delivery quote", { phone, distanceKm });
-    return;
-  }
-
-  await supabase.from("pending_delivery_quotes").insert({
-    profile_id: profileId,
-    phone,
-    distance_km: distanceKm,
-    driver_id: driver.id,
-  });
-
-  try {
-    await sendWhatsappText(driver.phone, buildDriverQuoteRequestMessage(distanceKm));
-  } catch (err) {
-    console.error("[whatsapp-webhook] failed to send driver quote request", err);
   }
 }
 
@@ -526,9 +540,22 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error("[whatsapp-webhook] pause auto-reply FAILED", err);
           }
-        } else if (message.type === "location" && message.location && profile?.id) {
-          console.log("[whatsapp-webhook] customer shared location, computing delivery fee", { profileId: profile.id });
-          await handleCustomerLocation(profile.id, phone, message.location.latitude, message.location.longitude);
+        } else if (message.type === "location" && message.location) {
+          console.log("[whatsapp-webhook] customer shared location, requesting confirmation", { profileId: profile?.id });
+          await handleGpsLocation(profile?.id ?? null, phone, message.location.latitude, message.location.longitude);
+        } else if (message.type === "interactive" && message.interactive?.type === "nfm_reply" && message.interactive.nfm_reply) {
+          console.log("[whatsapp-webhook] WhatsApp Flow completed", { profileId: profile?.id });
+          await handleFlowCompletion(profile?.id ?? null, phone, message.interactive.nfm_reply);
+        } else if (message.type === "interactive" && message.interactive?.type === "button_reply") {
+          const buttonId = message.interactive.button_reply?.id ?? "";
+          if (buttonId.startsWith(LOCATION_CONFIRM_BUTTON_PREFIX)) {
+            await handleLocationConfirmationReply(buttonId.slice(LOCATION_CONFIRM_BUTTON_PREFIX.length), true, phone);
+          } else if (buttonId.startsWith(LOCATION_REJECT_BUTTON_PREFIX)) {
+            await handleLocationConfirmationReply(buttonId.slice(LOCATION_REJECT_BUTTON_PREFIX.length), false, phone);
+          }
+        } else if (messageContent && message.type === "text" && isFlowTrigger(messageContent)) {
+          console.log("[whatsapp-webhook] flow trigger keyword detected, sending WhatsApp Flow", { profileId: profile?.id });
+          await handleFlowTrigger(profile?.id ?? null, phone);
         } else if (profile?.ai_active && messageContent && (message.type === "text" || message.type === "audio")) {
           console.log("[whatsapp-webhook] conversation is in IA mode, generating reply", { profileId: profile.id });
           await handleAiReply(profile.id, phone);

@@ -1,0 +1,126 @@
+import { createServiceClient } from "@/lib/supabase/server";
+import { sendWhatsappText, buildOrderConfirmationMessage } from "@/lib/whatsapp";
+import { sendAdminOrderNotification } from "@/lib/email";
+
+export interface FlowCartLine {
+  productId: string;
+  productName: string;
+  variantId: string | null;
+  variantName: string | null;
+  supplementIds: string[];
+  supplementNames: string[];
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+}
+
+export interface FlowCartState {
+  lines: FlowCartLine[];
+}
+
+/**
+ * Finalise une commande passée via le WhatsApp Flow — le panier est déjà
+ * entièrement pricé côté serveur (data endpoint), donc pas besoin de
+ * recalculer les prix comme dans /api/orders. Le Flow n'a pas d'écran de
+ * paiement (hors périmètre des 6 écrans demandés) : commande en espèces à
+ * la livraison par défaut, comme le reste du système.
+ */
+export async function createOrderFromFlowCart(params: {
+  phone: string;
+  profileId: string | null;
+  cart: FlowCartState;
+  deliveryAddress: string;
+  deliveryLat: number;
+  deliveryLng: number;
+  deliveryFee: number;
+}): Promise<{ orderId: string; orderNumber: string; total: number } | null> {
+  if (!params.cart.lines.length) {
+    console.warn("[create-order-from-flow] empty cart, nothing to create", { phone: params.phone });
+    return null;
+  }
+
+  const supabase = createServiceClient();
+  const subtotal = params.cart.lines.reduce((s, l) => s + l.lineTotal, 0);
+  const total = subtotal + params.deliveryFee;
+
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .insert({
+      profile_id: params.profileId,
+      payment_method: "cash_livraison",
+      subtotal,
+      delivery_fee: params.deliveryFee,
+      total,
+      delivery_address: params.deliveryAddress,
+      delivery_lat: params.deliveryLat,
+      delivery_lng: params.deliveryLng,
+    })
+    .select("id, order_number")
+    .single();
+
+  if (orderError || !order) {
+    console.error("[create-order-from-flow] order insert FAILED", orderError);
+    return null;
+  }
+
+  for (const line of params.cart.lines) {
+    const { data: orderItem } = await supabase
+      .from("order_items")
+      .insert({
+        order_id: order.id,
+        product_id: line.productId,
+        product_variant_id: line.variantId,
+        product_name: line.productName,
+        variant_name: line.variantName,
+        unit_price: line.unitPrice,
+        quantity: line.quantity,
+        line_total: line.lineTotal,
+      })
+      .select("id")
+      .single();
+
+    if (orderItem && line.supplementIds.length) {
+      await supabase.from("order_supplements").insert(
+        line.supplementIds.map((id, i) => ({
+          order_item_id: orderItem.id,
+          supplement_id: id,
+          supplement_name: line.supplementNames[i] ?? "",
+          unit_price: 0,
+        }))
+      );
+    }
+  }
+
+  const itemsSummary = params.cart.lines.map((l) => `${l.quantity}x ${l.productName}`).join("\n");
+
+  try {
+    await sendWhatsappText(
+      params.phone,
+      buildOrderConfirmationMessage({
+        orderNumber: order.order_number,
+        total,
+        itemsSummary,
+        paymentLabel: "Cash à la livraison",
+      })
+    );
+    await supabase.from("whatsapp_messages").insert({
+      profile_id: params.profileId,
+      order_id: order.id,
+      direction: "outbound",
+      phone: params.phone,
+      message_type: "text",
+      content: "Confirmation de commande (WhatsApp Flow)",
+    });
+  } catch (err) {
+    console.error("[create-order-from-flow] WhatsApp confirmation send FAILED", err);
+  }
+
+  await sendAdminOrderNotification({
+    orderNumber: order.order_number,
+    total,
+    phone: params.phone,
+    address: params.deliveryAddress,
+  });
+
+  return { orderId: order.id, orderNumber: order.order_number, total };
+}

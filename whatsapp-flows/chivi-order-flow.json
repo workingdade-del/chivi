@@ -1,0 +1,305 @@
+{
+  "version": "5.1",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "WELCOME": ["CATEGORIES"],
+    "CATEGORIES": ["PRODUCT_LIST"],
+    "PRODUCT_LIST": ["PRODUCT_DETAIL"],
+    "PRODUCT_DETAIL": ["CART"],
+    "CART": ["LOCALISATION"],
+    "LOCALISATION": []
+  },
+  "screens": [
+    {
+      "id": "WELCOME",
+      "title": "CHIVI",
+      "terminal": false,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Bienvenue chez CHIVI 🍽️"
+          },
+          {
+            "type": "TextBody",
+            "text": "La cuillère ne ment jamais. Commande tes plats préférés directement ici, sans quitter WhatsApp."
+          },
+          {
+            "type": "Footer",
+            "label": "Voir le menu 🍽️",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": { "trigger": "view_categories" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORIES",
+      "title": "Catégories",
+      "terminal": false,
+      "data": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [{ "id": "plats_chivi", "title": "Plats CHIVI" }]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Qu'est-ce qui te tente ?"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "selected_category",
+            "label": "Choisis une catégorie",
+            "required": true,
+            "data-source": "${data.categories}"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuer",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "trigger": "select_category",
+                "category_id": "${form.selected_category}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PRODUCT_LIST",
+      "title": "Plats",
+      "terminal": false,
+      "data": {
+        "category_name": { "type": "string", "__example__": "Plats CHIVI" },
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [{ "id": "prod-1", "title": "Spaghetti CHIVI", "description": "Spaghetti à l'œuf & à la saucisse" }]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "${data.category_name}"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "selected_product",
+            "label": "Choisis un plat",
+            "required": true,
+            "data-source": "${data.products}"
+          },
+          {
+            "type": "Footer",
+            "label": "Continuer",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "trigger": "select_product",
+                "product_id": "${form.selected_product}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PRODUCT_DETAIL",
+      "title": "Détail du plat",
+      "terminal": false,
+      "data": {
+        "product_id": { "type": "string", "__example__": "prod-1" },
+        "product_name": { "type": "string", "__example__": "Spaghetti CHIVI" },
+        "product_description": { "type": "string", "__example__": "Spaghetti à l'œuf & à la saucisse" },
+        "product_price_label": { "type": "string", "__example__": "À partir de 1 000 FCFA" },
+        "has_variants": { "type": "boolean", "__example__": true },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [{ "id": "var-1", "title": "Aileron — 2 000 FCFA" }]
+        },
+        "has_supplements": { "type": "boolean", "__example__": true },
+        "supplements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [{ "id": "sup-1", "title": "Frites (+500 FCFA)" }]
+        },
+        "quantities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [{ "id": "1", "title": "1" }]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "${data.product_name}"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.product_description}"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "${data.product_price_label}"
+          },
+          {
+            "type": "Dropdown",
+            "name": "variant",
+            "label": "Choisis une option",
+            "data-source": "${data.variants}",
+            "visible": "${data.has_variants}",
+            "required": false
+          },
+          {
+            "type": "CheckboxGroup",
+            "name": "supplements",
+            "label": "Suppléments",
+            "data-source": "${data.supplements}",
+            "visible": "${data.has_supplements}",
+            "required": false
+          },
+          {
+            "type": "Dropdown",
+            "name": "quantity",
+            "label": "Quantité",
+            "data-source": "${data.quantities}",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Ajouter au panier",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "trigger": "add_to_cart",
+                "product_id": "${data.product_id}",
+                "variant": "${form.variant}",
+                "supplements": "${form.supplements}",
+                "quantity": "${form.quantity}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CART",
+      "title": "Mon panier",
+      "terminal": false,
+      "data": {
+        "cart_summary": { "type": "string", "__example__": "2× Spaghetti CHIVI — 2 000 FCFA" },
+        "subtotal_label": { "type": "string", "__example__": "Sous-total : 2 000 FCFA" },
+        "has_items": { "type": "boolean", "__example__": true }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Mon panier"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.cart_summary}"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "${data.subtotal_label}"
+          },
+          {
+            "type": "Footer",
+            "label": "Commander",
+            "enabled": "${data.has_items}",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "LOCALISATION" },
+              "payload": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "LOCALISATION",
+      "title": "Livraison",
+      "terminal": true,
+      "success": true,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Où livrer ta commande ?"
+          },
+          {
+            "type": "TextBody",
+            "text": "Décris ta position (quartier, repère…) ci-dessous. Tu peux aussi fermer ce formulaire et partager ta localisation WhatsApp directement dans la conversation (📎 → Localisation) pour plus de précision."
+          },
+          {
+            "type": "TextInput",
+            "name": "location_text",
+            "label": "Ta position",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Continuer",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "location_text": "${form.location_text}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
