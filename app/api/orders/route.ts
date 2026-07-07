@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { buildOrderConfirmationMessage, normalizePhone, sendWhatsappText } from "@/lib/whatsapp";
 import { sendOrderReceiptEmail, sendAdminOrderNotification } from "@/lib/email";
+import { sanitizeText } from "@/lib/sanitize";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,10 @@ export async function POST(req: NextRequest) {
   if (!body.whatsappPhone || !body.lines?.length || !body.paymentMethod) {
     return NextResponse.json({ error: "Requête invalide" }, { status: 400 });
   }
+
+  body.addressDetails = sanitizeText(body.addressDetails ?? "", 500);
+  if (body.clientNote) body.clientNote = sanitizeText(body.clientNote, 500);
+  if (body.fullName) body.fullName = sanitizeText(body.fullName, 120);
 
   const supabase = createServiceClient();
 

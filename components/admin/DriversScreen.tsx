@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Plus, Send, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { compressImage } from "@/lib/image-compress";
 
 interface Driver {
   id: string;
@@ -56,8 +57,12 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
     if (!file) return;
     setUploadingPhoto(true);
     const supabase = createClient();
-    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
-    const { error } = await supabase.storage.from("driver-photos").upload(path, file, { upsert: true });
+    const compressed = await compressImage(file).catch(() => file);
+    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}.jpg`;
+    const { error } = await supabase.storage.from("driver-photos").upload(path, compressed, {
+      upsert: true,
+      contentType: "image/jpeg",
+    });
     if (!error) {
       const { data } = supabase.storage.from("driver-photos").getPublicUrl(path);
       setForm((f) => ({ ...f, photoUrl: data.publicUrl }));

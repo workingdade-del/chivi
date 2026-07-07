@@ -18,6 +18,9 @@ import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
 import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
 import { KITCHEN_ORIGIN, haversineKm, computeDeliveryFee } from "@/lib/distance";
+import { sanitizeText } from "@/lib/sanitize";
+import { isRateLimited } from "@/lib/rate-limit";
+import { verifyMetaSignature } from "@/lib/webhook-security";
 
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
@@ -374,15 +377,27 @@ async function handleDriverMessage(driver: { id: string; name: string }, message
 
 /** Réception des messages entrants : livreur (disponibilité) ou client (profil + IA). */
 export async function POST(req: NextRequest) {
+  if (isRateLimited("whatsapp-webhook")) {
+    console.warn("[whatsapp-webhook] rate limit exceeded (>100 req/min)");
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
+  const rawBody = await req.text();
+
+  if (!verifyMetaSignature(rawBody, req.headers.get("x-hub-signature-256"))) {
+    console.error("[whatsapp-webhook] invalid X-Hub-Signature-256 — rejecting request");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
   let payload: WhatsappWebhookPayload;
   try {
-    payload = (await req.json()) as WhatsappWebhookPayload;
+    payload = JSON.parse(rawBody) as WhatsappWebhookPayload;
   } catch (err) {
     console.error("[whatsapp-webhook] POST body is not valid JSON", err);
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  console.log("[whatsapp-webhook] POST received", JSON.stringify(payload));
+  console.log("[whatsapp-webhook] POST received", rawBody);
 
   const supabase = createServiceClient();
   const entries = payload.entry ?? [];
@@ -434,11 +449,12 @@ export async function POST(req: NextRequest) {
         }
 
         const contact = value.contacts?.find((c) => c.wa_id === message.from);
+        const contactName = contact?.profile?.name ? sanitizeText(contact.profile.name, 120) : undefined;
 
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .upsert(
-            { whatsapp_phone: phone, full_name: contact?.profile?.name },
+            { whatsapp_phone: phone, full_name: contactName },
             { onConflict: "whatsapp_phone", ignoreDuplicates: false }
           )
           .select("id, ai_active")
