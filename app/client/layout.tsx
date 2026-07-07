@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { BottomNav } from "@/components/client/BottomNav";
 import { CartSidebar } from "@/components/client/CartSidebar";
+import { PageTransition } from "@/components/client/PageTransition";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
 
 export const metadata: Metadata = {
@@ -26,7 +27,9 @@ export default function ClientAppLayout({ children }: { children: React.ReactNod
       <RegisterServiceWorker scope="client" />
       <div className="w-full max-w-[430px] md:max-w-none min-h-screen bg-app-client flex md:flex-row flex-col relative">
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="flex-1 overflow-y-auto">{children}</div>
+          <div className="flex-1 overflow-y-auto">
+            <PageTransition>{children}</PageTransition>
+          </div>
           <BottomNav />
         </div>
         <CartSidebar />

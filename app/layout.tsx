@@ -4,6 +4,13 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "CHIVI",
   description: "CHIVI — dark kitchen à Cotonou. La cuillère ne ment jamais.",
+  openGraph: {
+    title: "CHIVI",
+    description: "CHIVI — dark kitchen à Cotonou. La cuillère ne ment jamais.",
+    images: ["/brand_kit/assets/logo/chivi-wordmark-gold.png"],
+    locale: "fr_FR",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
