@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, ClipboardList, MessagesSquare, Bike, UtensilsCrossed, BarChart3, Users, Boxes, Megaphone } from "lucide-react";
+import { LayoutGrid, ClipboardList, MessagesSquare, Bike, UtensilsCrossed, BarChart3, Users, Boxes, Megaphone, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
@@ -16,6 +16,7 @@ const NAV = [
   { href: "/admin/marketing", label: "Marketing", icon: Megaphone, match: (p: string) => p.startsWith("/admin/marketing") },
   { href: "/admin/reports", label: "Rapports", icon: BarChart3, match: (p: string) => p.startsWith("/admin/reports") },
   { href: "/admin/clients", label: "Clients", icon: Users, match: (p: string) => p.startsWith("/admin/clients") },
+  { href: "/admin/settings", label: "Paramètres", icon: Settings, match: (p: string) => p.startsWith("/admin/settings") },
 ];
 
 export function Sidebar() {

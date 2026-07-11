@@ -14,6 +14,8 @@ import {
   sendWhatsappFlow,
   extractMessageId,
 } from "@/lib/whatsapp";
+import { uploadWhatsappMedia } from "@/lib/whatsapp-media";
+import { findDriverByPhone } from "@/lib/drivers";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
 import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
@@ -66,6 +68,9 @@ interface WhatsappMessage {
   type: string;
   text?: { body: string };
   audio?: { id: string; mime_type?: string };
+  image?: { id: string; mime_type?: string; caption?: string };
+  video?: { id: string; mime_type?: string; caption?: string };
+  document?: { id: string; mime_type?: string; caption?: string; filename?: string };
   location?: { latitude: number; longitude: number };
   interactive?: {
     type: string;
@@ -259,26 +264,6 @@ async function handleFlowCompletion(phone: string, nfmReply: { response_json: st
   } catch (err) {
     console.error("[whatsapp-webhook] failed to handle flow completion", err);
   }
-}
-
-/**
- * Cherche un livreur actif par numéro, en normalisant des deux côtés
- * (le format stocké en base n'est pas garanti identique à celui reçu
- * de Meta). Le nombre de livreurs actifs reste petit (poignée de
- * personnes) : un scan en mémoire est largement suffisant ici.
- */
-async function findDriverByPhone(phone: string): Promise<{ id: string; name: string } | null> {
-  const supabase = createServiceClient();
-  // Tri déterministe : un index unique empêche désormais deux livreurs
-  // actifs de partager un numéro (voir migration 0023), mais si jamais ce
-  // n'était pas le cas, mieux vaut un résultat stable et prévisible que
-  // l'ordre non garanti que Postgres renverrait sans ce tri.
-  const { data: drivers } = await supabase
-    .from("drivers")
-    .select("id, name, phone")
-    .eq("is_active", true)
-    .order("created_at", { ascending: true });
-  return drivers?.find((d) => normalizePhone(d.phone) === phone) ?? null;
 }
 
 /**
@@ -567,14 +552,41 @@ export async function POST(req: NextRequest) {
         // (pas juste "message audio") entre dans l'historique utilisé par
         // l'IA. Un échec de transcription dégrade gracieusement : le
         // message est quand même sauvegardé (sans contenu texte).
+        // Tout média (vocal, image, document, vidéo) est aussi retéléchargé
+        // et stocké dans le bucket privé whatsapp-media, sinon il devient
+        // inaccessible après expiration de l'URL Meta (quelques minutes) et
+        // ne peut plus jamais s'afficher dans l'historique Admin.
         let messageContent = message.text?.body ?? null;
-        if (message.type === "audio" && message.audio?.id) {
+        let mediaPath: string | null = null;
+        let mediaMimeType: string | null = null;
+
+        const mediaRef =
+          message.type === "audio"
+            ? message.audio
+            : message.type === "image"
+              ? message.image
+              : message.type === "video"
+                ? message.video
+                : message.type === "document"
+                  ? message.document
+                  : null;
+
+        if (mediaRef?.id) {
           try {
-            const { buffer, mimeType } = await downloadWhatsappMedia(message.audio.id);
-            messageContent = await transcribeAudio(buffer, message.audio.mime_type ?? mimeType);
-            console.log("[whatsapp-webhook] audio transcribed", { waMessageId: message.id, transcript: messageContent });
+            const { buffer, mimeType } = await downloadWhatsappMedia(mediaRef.id);
+            mediaMimeType = mediaRef.mime_type ?? mimeType;
+            mediaPath = await uploadWhatsappMedia(supabase, buffer, mediaMimeType, phone);
+
+            if (message.type === "audio") {
+              messageContent = await transcribeAudio(buffer, mediaMimeType);
+              console.log("[whatsapp-webhook] audio transcribed", { waMessageId: message.id, transcript: messageContent });
+            } else {
+              messageContent =
+                (mediaRef as { caption?: string }).caption ??
+                (message.type === "document" ? (mediaRef as { filename?: string }).filename ?? null : null);
+            }
           } catch (err) {
-            console.error("[whatsapp-webhook] audio transcription FAILED", { waMessageId: message.id, error: err });
+            console.error("[whatsapp-webhook] media download/store FAILED", { waMessageId: message.id, type: message.type, error: err });
           }
         }
 
@@ -586,6 +598,8 @@ export async function POST(req: NextRequest) {
           message_type: message.type,
           content: messageContent,
           payload: message as unknown as Record<string, unknown>,
+          media_path: mediaPath,
+          media_mime_type: mediaMimeType,
         });
 
         if (messageError) {

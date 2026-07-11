@@ -41,6 +41,48 @@ export async function sendWhatsappText(to: string, body: string) {
   return res.json();
 }
 
+/**
+ * Envoie un média (image, audio ou document) via une URL — WhatsApp Cloud
+ * API télécharge le fichier lui-même à cette adresse, donc l'URL doit rester
+ * accessible le temps de la requête (URL signée Supabase à courte durée de
+ * vie). L'audio ne supporte pas de légende côté API Meta.
+ */
+export async function sendWhatsappMedia(params: {
+  to: string;
+  mediaType: "image" | "audio" | "document";
+  link: string;
+  caption?: string;
+  filename?: string;
+}) {
+  const mediaPayload: Record<string, unknown> =
+    params.mediaType === "audio"
+      ? { link: params.link }
+      : params.mediaType === "document"
+        ? { link: params.link, caption: params.caption, filename: params.filename }
+        : { link: params.link, caption: params.caption };
+
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(params.to),
+      type: params.mediaType,
+      [params.mediaType]: mediaPayload,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
 /** Retire tout caractère non numérique (l'API attend un format E.164 sans "+"). */
 export function normalizePhone(phone: string): string {
   return phone.replace(/[^\d]/g, "");
@@ -257,4 +299,63 @@ export function buildPauseAutoReply(reason: string): string {
 
 export function buildResumeMessage(): string {
   return "Bonne nouvelle ! 🎉 CHIVI est de nouveau disponible. Vous pouvez commander maintenant !";
+}
+
+/** Récupère l'URL de la photo de profil business WhatsApp actuelle, si définie. */
+export async function getBusinessProfilePhotoUrl(): Promise<string | null> {
+  const res = await fetch(
+    `${GRAPH_BASE}/${phoneNumberId()}/whatsapp_business_profile?fields=profile_picture_url`,
+    { headers: { Authorization: `Bearer ${token()}` } }
+  );
+  if (!res.ok) return null;
+  const body = (await res.json()) as { data?: { profile_picture_url?: string }[] };
+  return body.data?.[0]?.profile_picture_url ?? null;
+}
+
+/**
+ * Met à jour la photo de profil business WhatsApp. Contrairement à l'envoi
+ * de médias dans une conversation (un simple lien suffit), ce champ exige un
+ * "handle" obtenu via l'API Resumable Upload de Meta — un flux en 3 étapes
+ * distinct de l'API Cloud classique :
+ *   1. Créer une session d'upload (taille + type du fichier).
+ *   2. Y déposer les octets → on récupère un handle "h".
+ *   3. Référencer ce handle dans whatsapp_business_profile.
+ */
+export async function updateBusinessProfilePhoto(buffer: Buffer, mimeType: string): Promise<void> {
+  const appId = process.env.META_APP_ID;
+  if (!appId) throw new Error("META_APP_ID n'est pas configurée");
+
+  const sessionRes = await fetch(
+    `${GRAPH_BASE}/${appId}/uploads?file_length=${buffer.length}&file_type=${encodeURIComponent(mimeType)}&access_token=${encodeURIComponent(token())}`,
+    { method: "POST" }
+  );
+  if (!sessionRes.ok) {
+    throw new Error(`Échec création session d'upload Meta (${sessionRes.status}): ${await sessionRes.text()}`);
+  }
+  const session = (await sessionRes.json()) as { id: string };
+
+  const uploadRes = await fetch(`${GRAPH_BASE}/${session.id}`, {
+    method: "POST",
+    headers: {
+      Authorization: `OAuth ${token()}`,
+      file_offset: "0",
+    },
+    body: new Uint8Array(buffer),
+  });
+  if (!uploadRes.ok) {
+    throw new Error(`Échec upload photo profil (${uploadRes.status}): ${await uploadRes.text()}`);
+  }
+  const uploaded = (await uploadRes.json()) as { h: string };
+
+  const profileRes = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/whatsapp_business_profile`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ messaging_product: "whatsapp", profile_picture_handle: uploaded.h }),
+  });
+  if (!profileRes.ok) {
+    throw new Error(`Échec mise à jour photo profil (${profileRes.status}): ${await profileRes.text()}`);
+  }
 }

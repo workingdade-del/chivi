@@ -178,9 +178,12 @@ export interface Database {
           wa_message_id: string | null;
           direction: WhatsappDirection;
           phone: string;
+          normalized_phone: string;
           message_type: string;
           content: string | null;
           payload: Record<string, unknown> | null;
+          media_path: string | null;
+          media_mime_type: string | null;
           delivery_status: string | null;
           delivery_error: string | null;
           created_at: string;
@@ -290,7 +293,25 @@ export interface Database {
         "phone"
       >;
     };
-    Views: Record<string, never>;
+    Views: {
+      all_conversations: {
+        Row: {
+          normalized_phone: string;
+          phone: string;
+          profile_id: string | null;
+          driver_id: string | null;
+          contact_name: string | null;
+          contact_type: "client" | "livreur" | "inconnu";
+          ai_active: boolean | null;
+          last_message: string | null;
+          last_direction: WhatsappDirection;
+          last_message_type: string;
+          last_media_path: string | null;
+          last_message_at: string;
+        };
+        Relationships: [];
+      };
+    };
     Functions: Record<string, never>;
   };
 }
