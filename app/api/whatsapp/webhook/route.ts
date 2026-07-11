@@ -12,6 +12,7 @@ import {
   normalizePhone,
   sendWhatsappText,
   sendWhatsappFlow,
+  extractMessageId,
 } from "@/lib/whatsapp";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
@@ -73,6 +74,14 @@ interface WhatsappMessage {
   };
 }
 
+interface WhatsappStatus {
+  id: string;
+  status: string;
+  timestamp?: string;
+  recipient_id?: string;
+  errors?: { code: number; title: string; message?: string; error_data?: { details?: string } }[];
+}
+
 interface WhatsappWebhookPayload {
   entry?: {
     id?: string;
@@ -80,10 +89,53 @@ interface WhatsappWebhookPayload {
       value?: {
         contacts?: { profile?: { name?: string }; wa_id: string }[];
         messages?: WhatsappMessage[];
+        statuses?: WhatsappStatus[];
       };
       field?: string;
     }[];
   }[];
+}
+
+/**
+ * Un envoi accepté par l'API (200 OK) peut ensuite échouer à la livraison
+ * (numéro pas sur WhatsApp, fenêtre de réengagement de 24h expirée,
+ * destinataire ayant bloqué le compte business, etc.) — Meta ne le
+ * signale que via ce callback asynchrone "statuses", jusqu'ici reçu et
+ * silencieusement jeté. On logue tout le détail et on le persiste sur le
+ * message concerné (retrouvé par wa_message_id) pour que l'échec soit
+ * visible ailleurs que dans les logs serveur.
+ */
+async function handleStatusUpdates(statuses: WhatsappStatus[]) {
+  const supabase = createServiceClient();
+  for (const status of statuses) {
+    const hasErrors = Boolean(status.errors?.length);
+    if (hasErrors) {
+      console.error("[whatsapp-webhook] delivery status FAILED", {
+        waMessageId: status.id,
+        status: status.status,
+        recipient: status.recipient_id,
+        errors: status.errors,
+      });
+    } else {
+      console.log("[whatsapp-webhook] delivery status update", {
+        waMessageId: status.id,
+        status: status.status,
+        recipient: status.recipient_id,
+      });
+    }
+
+    const { error } = await supabase
+      .from("whatsapp_messages")
+      .update({
+        delivery_status: status.status,
+        delivery_error: hasErrors ? JSON.stringify(status.errors) : null,
+      })
+      .eq("wa_message_id", status.id);
+
+    if (error) {
+      console.error("[whatsapp-webhook] failed to persist delivery status", { waMessageId: status.id, error });
+    }
+  }
 }
 
 /**
@@ -117,10 +169,11 @@ async function handleAiReply(profileId: string, phone: string) {
 
     console.log("[whatsapp-webhook] Groq reply generated", { profileId, reply });
 
-    await sendWhatsappText(phone, reply);
+    const sendResult = await sendWhatsappText(phone, reply);
 
     const { error: logError } = await supabase.from("whatsapp_messages").insert({
       profile_id: profileId,
+      wa_message_id: extractMessageId(sendResult),
       direction: "outbound",
       phone,
       message_type: "text",
@@ -216,7 +269,15 @@ async function handleFlowCompletion(phone: string, nfmReply: { response_json: st
  */
 async function findDriverByPhone(phone: string): Promise<{ id: string; name: string } | null> {
   const supabase = createServiceClient();
-  const { data: drivers } = await supabase.from("drivers").select("id, name, phone").eq("is_active", true);
+  // Tri déterministe : un index unique empêche désormais deux livreurs
+  // actifs de partager un numéro (voir migration 0023), mais si jamais ce
+  // n'était pas le cas, mieux vaut un résultat stable et prévisible que
+  // l'ordre non garanti que Postgres renverrait sans ce tri.
+  const { data: drivers } = await supabase
+    .from("drivers")
+    .select("id, name, phone")
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
   return drivers?.find((d) => normalizePhone(d.phone) === phone) ?? null;
 }
 
@@ -252,10 +313,11 @@ async function handleDeliveryConfirmed(driver: { id: string; name: string }, ord
 
     if (profile) {
       try {
-        await sendWhatsappText(profile.whatsapp_phone, buildPostDeliveryFeedbackMessage());
+        const sendResult = await sendWhatsappText(profile.whatsapp_phone, buildPostDeliveryFeedbackMessage());
         await supabase.from("whatsapp_messages").insert({
           profile_id: order.profile_id,
           order_id: orderId,
+          wa_message_id: extractMessageId(sendResult),
           direction: "outbound",
           phone: profile.whatsapp_phone,
           message_type: "text",
@@ -455,10 +517,11 @@ export async function POST(req: NextRequest) {
       }
 
       if (!value?.messages?.length) {
-        console.log("[whatsapp-webhook] change has no messages (likely a status update)", {
-          field: change.field,
-          hasStatuses: Boolean((value as { statuses?: unknown[] } | undefined)?.statuses),
-        });
+        if (value?.statuses?.length) {
+          await handleStatusUpdates(value.statuses);
+        } else {
+          console.log("[whatsapp-webhook] change has no messages and no statuses", { field: change.field });
+        }
         continue;
       }
 
@@ -546,9 +609,10 @@ export async function POST(req: NextRequest) {
           console.log("[whatsapp-webhook] system is paused, sending pause auto-reply", { profileId: profile?.id });
           try {
             const reply = buildPauseAutoReply(settings?.pause_reason ?? "Indisponibilité temporaire");
-            await sendWhatsappText(phone, reply);
+            const sendResult = await sendWhatsappText(phone, reply);
             await supabase.from("whatsapp_messages").insert({
               profile_id: profile?.id ?? null,
+              wa_message_id: extractMessageId(sendResult),
               direction: "outbound",
               phone,
               message_type: "text",

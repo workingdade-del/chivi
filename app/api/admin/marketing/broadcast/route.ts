@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerAuthClient, createServiceClient } from "@/lib/supabase/server";
-import { sendWhatsappText } from "@/lib/whatsapp";
+import { sendWhatsappText, extractMessageId } from "@/lib/whatsapp";
 
 const RECENT_DAYS = 30;
 
@@ -39,9 +39,10 @@ export async function POST(req: NextRequest) {
   let sent = 0;
   for (const profile of profiles ?? []) {
     try {
-      await sendWhatsappText(profile.whatsapp_phone, body.message);
+      const sendResult = await sendWhatsappText(profile.whatsapp_phone, body.message);
       await supabase.from("whatsapp_messages").insert({
         profile_id: profile.id,
+        wa_message_id: extractMessageId(sendResult),
         direction: "outbound",
         phone: profile.whatsapp_phone,
         message_type: "text",

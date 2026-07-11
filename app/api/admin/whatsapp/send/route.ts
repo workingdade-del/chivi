@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerAuthClient, createServiceClient } from "@/lib/supabase/server";
-import { normalizePhone, sendWhatsappText } from "@/lib/whatsapp";
+import { normalizePhone, sendWhatsappText, extractMessageId } from "@/lib/whatsapp";
 
 /** Réponse manuelle envoyée par un membre du staff depuis la console Admin. */
 export async function POST(req: NextRequest) {
@@ -25,8 +25,10 @@ export async function POST(req: NextRequest) {
 
   const normalizedPhone = normalizePhone(phone);
 
+  let waMessageId: string | null = null;
   try {
-    await sendWhatsappText(normalizedPhone, message);
+    const sendResult = await sendWhatsappText(normalizedPhone, message);
+    waMessageId = extractMessageId(sendResult);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Échec de l'envoi WhatsApp" },
@@ -37,6 +39,7 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceClient();
   await supabase.from("whatsapp_messages").insert({
     profile_id: profileId,
+    wa_message_id: waMessageId,
     direction: "outbound",
     phone: normalizedPhone,
     message_type: "text",

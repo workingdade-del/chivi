@@ -181,6 +181,8 @@ export interface Database {
           message_type: string;
           content: string | null;
           payload: Record<string, unknown> | null;
+          delivery_status: string | null;
+          delivery_error: string | null;
           created_at: string;
         },
         "direction" | "phone"

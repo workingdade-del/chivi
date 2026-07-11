@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerAuthClient, createServiceClient } from "@/lib/supabase/server";
-import { sendWhatsappAvailabilityRequest } from "@/lib/whatsapp";
+import { sendWhatsappAvailabilityRequest, extractMessageId } from "@/lib/whatsapp";
 
 /** Envoie une demande de disponibilité (boutons ✅/❌) à un livreur. Staff uniquement. */
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -24,8 +24,10 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Livreur introuvable" }, { status: 404 });
   }
 
+  let waMessageId: string | null = null;
   try {
-    await sendWhatsappAvailabilityRequest(driver.phone, driver.name);
+    const sendResult = await sendWhatsappAvailabilityRequest(driver.phone, driver.name);
+    waMessageId = extractMessageId(sendResult);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Échec de l'envoi WhatsApp" },
@@ -35,6 +37,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   await supabase.from("whatsapp_messages").insert({
     driver_id: driver.id,
+    wa_message_id: waMessageId,
     direction: "outbound",
     phone: driver.phone,
     message_type: "interactive",

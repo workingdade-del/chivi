@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { buildOrderConfirmationMessage, normalizePhone, sendWhatsappText } from "@/lib/whatsapp";
+import { buildOrderConfirmationMessage, normalizePhone, sendWhatsappText, extractMessageId } from "@/lib/whatsapp";
 import { sendOrderReceiptEmail, sendAdminOrderNotification } from "@/lib/email";
 import { sanitizeText } from "@/lib/sanitize";
 import type { PaymentMethod } from "@/lib/supabase/types";
@@ -218,7 +218,7 @@ export async function POST(req: NextRequest) {
     .join("\n");
 
   try {
-    await sendWhatsappText(
+    const sendResult = await sendWhatsappText(
       phone,
       buildOrderConfirmationMessage({
         orderNumber: order.order_number,
@@ -230,6 +230,7 @@ export async function POST(req: NextRequest) {
     await supabase.from("whatsapp_messages").insert({
       profile_id: profile.id,
       order_id: order.id,
+      wa_message_id: extractMessageId(sendResult),
       direction: "outbound",
       phone,
       message_type: "text",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerAuthClient, createServiceClient } from "@/lib/supabase/server";
-import { buildResumeMessage, sendWhatsappText } from "@/lib/whatsapp";
+import { buildResumeMessage, sendWhatsappText, extractMessageId } from "@/lib/whatsapp";
 
 /**
  * Rétablit le service et prévient par WhatsApp tous les clients qui ont
@@ -46,9 +46,10 @@ export async function POST() {
 
       for (const profile of profiles ?? []) {
         try {
-          await sendWhatsappText(profile.whatsapp_phone, buildResumeMessage());
+          const sendResult = await sendWhatsappText(profile.whatsapp_phone, buildResumeMessage());
           await supabase.from("whatsapp_messages").insert({
             profile_id: profile.id,
+            wa_message_id: extractMessageId(sendResult),
             direction: "outbound",
             phone: profile.whatsapp_phone,
             message_type: "text",

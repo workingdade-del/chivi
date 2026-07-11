@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerAuthClient, createServiceClient } from "@/lib/supabase/server";
-import { sendDriverDeliveryAssignment } from "@/lib/whatsapp";
+import { sendDriverDeliveryAssignment, extractMessageId } from "@/lib/whatsapp";
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash_livraison: "Cash à la livraison",
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   await supabase.from("drivers").update({ status: "en_course" }).eq("id", driver.id);
 
   try {
-    await sendDriverDeliveryAssignment({
+    const sendResult = await sendDriverDeliveryAssignment({
       to: driver.phone,
       driverName: driver.name,
       orderNumber: order.order_number,
@@ -71,6 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     await supabase.from("whatsapp_messages").insert({
       driver_id: driver.id,
       order_id: order.id,
+      wa_message_id: extractMessageId(sendResult),
       direction: "outbound",
       phone: driver.phone,
       message_type: "interactive",

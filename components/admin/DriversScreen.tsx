@@ -40,15 +40,18 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
   const [busy, setBusy] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [pinging, setPinging] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function openAddForm() {
     setForm(EMPTY_FORM);
+    setFormError(null);
     setShowForm(true);
   }
 
   function openEditForm(d: Driver) {
     setForm({ id: d.id, name: d.name, phone: d.phone, photoUrl: d.photo_url });
+    setFormError(null);
     setShowForm(true);
   }
 
@@ -73,16 +76,26 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setFormError(null);
     const supabase = createClient();
-    if (form.id) {
-      await supabase
-        .from("drivers")
-        .update({ name: form.name, phone: form.phone, photo_url: form.photoUrl })
-        .eq("id", form.id);
-    } else {
-      await supabase.from("drivers").insert({ name: form.name, phone: form.phone, photo_url: form.photoUrl });
-    }
+    const { error } = form.id
+      ? await supabase
+          .from("drivers")
+          .update({ name: form.name, phone: form.phone, photo_url: form.photoUrl })
+          .eq("id", form.id)
+      : await supabase.from("drivers").insert({ name: form.name, phone: form.phone, photo_url: form.photoUrl });
+
     setBusy(false);
+
+    if (error) {
+      setFormError(
+        error.code === "23505"
+          ? "Ce numéro est déjà utilisé par un autre livreur actif."
+          : "Échec de l'enregistrement du livreur."
+      );
+      return;
+    }
+
     setShowForm(false);
     setForm(EMPTY_FORM);
     router.refresh();
@@ -122,7 +135,10 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white border border-[#ece2cd] rounded-2xl p-5 mb-4 flex gap-3 items-end">
+        <form onSubmit={handleSubmit} className="bg-white border border-[#ece2cd] rounded-2xl p-5 mb-4 flex flex-wrap gap-3 items-end">
+          {formError && (
+            <div className="w-full text-sm text-chilli bg-[rgba(231,50,35,.08)] rounded-xl px-3.5 py-2.5">{formError}</div>
+          )}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -159,6 +175,7 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
             onClick={() => {
               setShowForm(false);
               setForm(EMPTY_FORM);
+              setFormError(null);
             }}
             className="text-sm font-semibold text-[#6d6358] px-4 py-2.5"
           >

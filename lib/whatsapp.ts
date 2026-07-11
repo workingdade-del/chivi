@@ -1,5 +1,14 @@
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
 
+export interface WhatsappSendResponse {
+  messages?: { id: string }[];
+}
+
+/** Extrait le wamid retourné par Meta — à stocker sur la ligne whatsapp_messages sortante pour pouvoir relier les callbacks de statut de livraison ensuite. */
+export function extractMessageId(response: WhatsappSendResponse): string | null {
+  return response.messages?.[0]?.id ?? null;
+}
+
 function phoneNumberId(): string {
   return process.env.WHATSAPP_PHONE_NUMBER_ID!;
 }

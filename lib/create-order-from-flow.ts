@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { sendWhatsappText, buildOrderConfirmationMessage } from "@/lib/whatsapp";
+import { sendWhatsappText, buildOrderConfirmationMessage, extractMessageId } from "@/lib/whatsapp";
 import { sendAdminOrderNotification } from "@/lib/email";
 
 export interface FlowCartLine {
@@ -94,7 +94,7 @@ export async function createOrderFromFlowCart(params: {
   const itemsSummary = params.cart.lines.map((l) => `${l.quantity}x ${l.productName}`).join("\n");
 
   try {
-    await sendWhatsappText(
+    const sendResult = await sendWhatsappText(
       params.phone,
       buildOrderConfirmationMessage({
         orderNumber: order.order_number,
@@ -106,6 +106,7 @@ export async function createOrderFromFlowCart(params: {
     await supabase.from("whatsapp_messages").insert({
       profile_id: params.profileId,
       order_id: order.id,
+      wa_message_id: extractMessageId(sendResult),
       direction: "outbound",
       phone: params.phone,
       message_type: "text",
