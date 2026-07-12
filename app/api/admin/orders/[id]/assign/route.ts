@@ -27,14 +27,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const supabase = createServiceClient();
   const orderId = params.id;
 
-  const { data: order, error: orderError } = await supabase
+  const { data: orderData, error: orderError } = await supabase
     .from("orders")
-    .select("id, order_number, total, payment_method, delivery_address")
+    .select("id, order_number, status, total, payment_method, delivery_address, order_assignments(id, driver_id)")
     .eq("id", orderId)
     .maybeSingle();
 
+  const order = orderData as unknown as {
+    id: string;
+    order_number: string;
+    status: string;
+    total: number;
+    payment_method: string;
+    delivery_address: string | null;
+    order_assignments: { id: string; driver_id: string }[];
+  } | null;
+
   if (orderError || !order) {
     return NextResponse.json({ error: "Commande introuvable" }, { status: 404 });
+  }
+
+  if (order.status === "livree" || order.status === "annulee") {
+    return NextResponse.json({ error: "Impossible d'assigner un livreur sur une commande livrée ou annulée." }, { status: 409 });
   }
 
   const { data: driver, error: driverError } = await supabase
@@ -45,6 +59,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   if (driverError || !driver) {
     return NextResponse.json({ error: "Livreur introuvable" }, { status: 404 });
+  }
+
+  // Réassignation : un livreur déjà en course sur cette commande doit être
+  // libéré avant d'en assigner un nouveau, sinon il reste bloqué
+  // "en_course" indéfiniment sur une livraison qui n'est plus la sienne.
+  const previousAssignment = order.order_assignments?.[0];
+  if (previousAssignment && previousAssignment.driver_id !== driver.id) {
+    await supabase.from("drivers").update({ status: "libre" }).eq("id", previousAssignment.driver_id);
   }
 
   const { error: assignError } = await supabase

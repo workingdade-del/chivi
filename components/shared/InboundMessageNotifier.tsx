@@ -20,6 +20,29 @@ function previewOf(messageType: string, content: string | null): string {
 }
 
 /**
+ * Une page contrôlée par un Service Worker actif (c'est le cas ici — voir
+ * RegisterServiceWorker) ne peut plus fiablement utiliser `new
+ * Notification()` : Chrome l'ignore silencieusement (ou lève une
+ * exception selon la version/plateforme) dès qu'un SW contrôle la page,
+ * et exige `registration.showNotification()` à la place. C'est très
+ * probablement pourquoi aucune notification n'apparaissait malgré la
+ * permission accordée.
+ */
+async function showBrowserNotification(title: string, body: string) {
+  if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "granted") return;
+
+  if ("serviceWorker" in navigator) {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (registration) {
+      await registration.showNotification(title, { body, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png" });
+      return;
+    }
+  }
+
+  new Notification(title, { body, icon: "/icons/icon-192.png" });
+}
+
+/**
  * Notifie en direct l'arrivée d'un message WhatsApp entrant — monté une
  * seule fois au niveau du shell (Admin/Cuisine) pour rester actif peu
  * importe l'écran affiché, pas seulement sur la page Conversations.
@@ -67,10 +90,7 @@ export function InboundMessageNotifier() {
           setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== toastId)), 6000);
 
           playNotificationPing();
-
-          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-            new Notification(`CHIVI — ${name}`, { body: preview, icon: "/icons/icon-192.png" });
-          }
+          await showBrowserNotification(`CHIVI — ${name}`, preview);
         }
       )
       .subscribe();

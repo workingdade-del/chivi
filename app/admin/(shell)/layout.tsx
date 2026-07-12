@@ -20,7 +20,7 @@ export default async function AdminShellLayout({ children }: { children: React.R
   const settings = await getSystemSettings();
 
   return (
-    <div className="min-h-screen bg-app-admin flex flex-col">
+    <div className="h-screen bg-app-admin flex flex-col">
       <RegisterServiceWorker scope="admin" />
       <InboundMessageNotifier />
       <PauseBanner initial={settings} />

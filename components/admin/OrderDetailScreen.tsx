@@ -65,6 +65,8 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Échec de l'assignation");
       }
+      setAssigning(false);
+      setSelectedDriver("");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Échec de l'assignation");
     } finally {
@@ -192,18 +194,19 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
               </div>
             </div>
           )}
-          {!driver && order.status !== "recue" && order.status !== "en_preparation" && (
-            <div className="mt-1.5">
+          {!driver && order.status !== "livree" && order.status !== "annulee" && (
+            <div className="text-[13px] text-[#9a8b78] mb-3 mt-1.5">Aucun livreur sur cette course.</div>
+          )}
+
+          {order.status !== "livree" && order.status !== "annulee" && (
+            <div className="mt-2">
               {!assigning ? (
-                <>
-                  <div className="text-[13px] text-[#9a8b78] mb-3">Aucun livreur sur cette course.</div>
-                  <button
-                    onClick={() => setAssigning(true)}
-                    className="w-full py-3 rounded-xl bg-maroon text-gold font-bold text-sm"
-                  >
-                    Assigner un livreur
-                  </button>
-                </>
+                <button
+                  onClick={() => setAssigning(true)}
+                  className="w-full py-3 rounded-xl bg-maroon text-gold font-bold text-sm"
+                >
+                  {driver ? "Changer de livreur" : "Assigner un livreur"}
+                </button>
               ) : (
                 <div className="flex flex-col gap-2">
                   <select
@@ -212,26 +215,35 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
                     className="border-2 border-[#e6dcc4] rounded-xl px-3 py-2.5 text-sm"
                   >
                     <option value="">Choisir un livreur…</option>
-                    {drivers.filter((d) => d.status === "libre" && d.is_available).map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
+                    {drivers
+                      .filter((d) => d.id === driver?.id || (d.status === "libre" && d.is_available))
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                          {d.id === driver?.id ? " (actuel)" : ""}
+                        </option>
+                      ))}
                   </select>
-                  <button
-                    onClick={handleAssign}
-                    disabled={!selectedDriver || busy}
-                    className="w-full py-3 rounded-xl bg-maroon text-gold font-bold text-sm disabled:opacity-50"
-                  >
-                    Confirmer
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAssigning(false)}
+                      className="flex-1 py-3 rounded-xl border-2 border-[#e6dcc4] text-[#6d6358] font-bold text-sm"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={handleAssign}
+                      disabled={!selectedDriver || selectedDriver === driver?.id || busy}
+                      className="flex-1 py-3 rounded-xl bg-maroon text-gold font-bold text-sm disabled:opacity-50"
+                    >
+                      Confirmer
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           )}
-          {!driver && (order.status === "recue" || order.status === "en_preparation") && (
-            <div className="text-[13px] text-[#9a8b78] mt-1.5">En cuisine — pas encore prête pour livraison.</div>
-          )}
+
           {driver && order.status === "en_route" && (
             <button
               onClick={handleMarkDelivered}

@@ -17,6 +17,54 @@ function token(): string {
   return process.env.WHATSAPP_TOKEN!;
 }
 
+export const NEW_CONVERSATION_TEMPLATE_NAME = "chivi_nouvelle_commande";
+
+export type TemplateStatus = "APPROVED" | "PENDING" | "REJECTED" | "NOT_FOUND";
+
+/** Interroge Meta en direct pour l'état d'approbation du template — pas de cache local, la fréquence d'usage (démarrage de conversation hors fenêtre 24h) est trop faible pour le justifier. */
+export async function getTemplateStatus(name: string): Promise<TemplateStatus> {
+  const wabaId = process.env.WHATSAPP_WABA_ID;
+  if (!wabaId) return "NOT_FOUND";
+
+  const res = await fetch(`${GRAPH_BASE}/${wabaId}/message_templates?name=${encodeURIComponent(name)}`, {
+    headers: { Authorization: `Bearer ${token()}` },
+  });
+  if (!res.ok) return "NOT_FOUND";
+
+  const body = (await res.json()) as { data?: { status?: string }[] };
+  const status = body.data?.[0]?.status;
+  if (status === "APPROVED" || status === "PENDING" || status === "REJECTED") return status;
+  return "NOT_FOUND";
+}
+
+/** Envoie le template approuvé chivi_nouvelle_commande — seul type de message autorisé hors fenêtre de 24h. */
+export async function sendOrderTemplateMessage(to: string, customerName: string) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "template",
+      template: {
+        name: NEW_CONVERSATION_TEMPLATE_NAME,
+        language: { code: "fr" },
+        components: [{ type: "body", parameters: [{ type: "text", text: customerName }] }],
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp template send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
 /** Envoie un message texte WhatsApp via l'API Cloud de Meta. Serveur uniquement. */
 export async function sendWhatsappText(to: string, body: string) {
   const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
