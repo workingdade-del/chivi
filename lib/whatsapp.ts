@@ -75,12 +75,24 @@ export async function sendWhatsappMedia(params: {
     }),
   });
 
+  // Un envoi média accepté (200 OK) ne garantit pas la lecture correcte côté
+  // destinataire — un format/mime_type incompatible peut être accepté par
+  // l'API puis échouer silencieusement (ou être visible uniquement dans le
+  // callback asynchrone "statuses"). On logue donc systématiquement la
+  // réponse complète de Meta, pas seulement en cas d'échec HTTP.
+  const rawBody = await res.text();
+  console.log("[whatsapp-media] réponse Meta à l'envoi", {
+    mediaType: params.mediaType,
+    status: res.status,
+    link: params.link,
+    body: rawBody,
+  });
+
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+    throw new Error(`WhatsApp send failed (${res.status}): ${rawBody}`);
   }
 
-  return res.json();
+  return JSON.parse(rawBody);
 }
 
 /** Retire tout caractère non numérique (l'API attend un format E.164 sans "+"). */

@@ -18,9 +18,21 @@ const EXTENSION_BY_MIME: Record<string, string> = {
   "application/pdf": "pdf",
 };
 
-function extensionFor(mimeType: string): string {
+export function extensionFor(mimeType: string): string {
   const clean = mimeType.split(";")[0].trim();
   return EXTENSION_BY_MIME[clean] ?? clean.split("/")[1] ?? "bin";
+}
+
+/** Télécharge un média déjà stocké dans whatsapp-media (ex : audio brut à reconvertir). */
+export async function downloadStoredMedia(supabase: SupabaseClient<Database>, path: string): Promise<Buffer> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  if (error) throw new Error(`Échec téléchargement média stocké: ${error.message}`);
+  return Buffer.from(await data.arrayBuffer());
+}
+
+/** Supprime un objet du bucket whatsapp-media (ex : fichier brut superseded par une version convertie). */
+export async function deleteStoredMedia(supabase: SupabaseClient<Database>, path: string): Promise<void> {
+  await supabase.storage.from(BUCKET).remove([path]);
 }
 
 /**
