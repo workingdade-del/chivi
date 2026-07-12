@@ -368,6 +368,95 @@ async function handleDriverQuoteReply(driver: { id: string; name: string }, driv
   return true;
 }
 
+interface ResolvedInboundMedia {
+  content: string | null;
+  mediaPath: string | null;
+  mediaMimeType: string | null;
+}
+
+/**
+ * Télécharge et stocke le média d'un message entrant (vocal, image, doc,
+ * vidéo) dans le bucket privé whatsapp-media, quel que soit l'expéditeur —
+ * client ou livreur. Utilisé à la fois par le flux client générique et par
+ * handleDriverMessage : avant l'extraction de cette fonction, seul le flux
+ * client appelait ce téléchargement, donc TOUT message d'un livreur (numéro
+ * enregistré dans `drivers`) contournait entièrement ce traitement et
+ * n'affichait jamais ni lecteur audio ni transcription dans l'Admin — le
+ * bug exact derrière "Audio indisponible" persistant pour un numéro livreur.
+ * Un vocal est transcrit AVANT d'être loggé ; la transcription est isolée
+ * dans son propre try/catch pour qu'un échec Groq ne fasse jamais perdre le
+ * média déjà téléchargé et stocké.
+ */
+async function resolveInboundMedia(
+  message: WhatsappMessage,
+  phone: string,
+  supabase: ReturnType<typeof createServiceClient>
+): Promise<ResolvedInboundMedia> {
+  let content = message.text?.body ?? null;
+  let mediaPath: string | null = null;
+  let mediaMimeType: string | null = null;
+
+  const mediaRef =
+    message.type === "audio"
+      ? message.audio
+      : message.type === "image"
+        ? message.image
+        : message.type === "video"
+          ? message.video
+          : message.type === "document"
+            ? message.document
+            : null;
+
+  if (!mediaRef?.id) {
+    return { content, mediaPath, mediaMimeType };
+  }
+
+  console.log("[whatsapp-webhook] média entrant détecté, résolution en cours", {
+    waMessageId: message.id,
+    type: message.type,
+    mediaId: mediaRef.id,
+  });
+
+  try {
+    const { buffer, mimeType } = await downloadWhatsappMedia(mediaRef.id);
+    mediaMimeType = mediaRef.mime_type ?? mimeType;
+    console.log("[whatsapp-webhook] média téléchargé depuis Meta", {
+      waMessageId: message.id,
+      bytes: buffer.length,
+      mediaMimeType,
+    });
+
+    mediaPath = await uploadWhatsappMedia(supabase, buffer, mediaMimeType, phone);
+    console.log("[whatsapp-webhook] média entrant stocké dans whatsapp-media", {
+      waMessageId: message.id,
+      type: message.type,
+      mediaPath,
+      mediaMimeType,
+      bytes: buffer.length,
+    });
+
+    if (message.type === "audio") {
+      try {
+        content = await transcribeAudio(buffer, mediaMimeType);
+        console.log("[whatsapp-webhook] audio transcribed", { waMessageId: message.id, transcript: content });
+      } catch (transcribeErr) {
+        console.error("[whatsapp-webhook] audio transcription FAILED (média conservé)", {
+          waMessageId: message.id,
+          error: transcribeErr,
+        });
+      }
+    } else {
+      content =
+        (mediaRef as { caption?: string }).caption ??
+        (message.type === "document" ? (mediaRef as { filename?: string }).filename ?? null : null);
+    }
+  } catch (err) {
+    console.error("[whatsapp-webhook] media download/store FAILED", { waMessageId: message.id, type: message.type, error: err });
+  }
+
+  return { content, mediaPath, mediaMimeType };
+}
+
 /**
  * Traite un message venant d'un numéro déjà enregistré dans `drivers`.
  * Un livreur n'est jamais traité comme un client (pas de profil créé,
@@ -436,14 +525,18 @@ async function handleDriverMessage(driver: { id: string; name: string }, message
     console.error("[whatsapp-webhook] failed to update driver availability", { driverId: driver.id, error });
   }
 
+  const resolvedMedia = await resolveInboundMedia(message, phone, supabase);
+
   await supabase.from("whatsapp_messages").insert({
     driver_id: driver.id,
     wa_message_id: message.id,
     direction: "inbound",
     phone,
     message_type: message.type,
-    content: message.text?.body ?? message.interactive?.button_reply?.title ?? null,
+    content: resolvedMedia.content ?? message.interactive?.button_reply?.title ?? null,
     payload: message as unknown as Record<string, unknown>,
+    media_path: resolvedMedia.mediaPath,
+    media_mime_type: resolvedMedia.mediaMimeType,
   });
 
   if (nextAvailability !== null) {
@@ -554,65 +647,7 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Un vocal est transcrit AVANT d'être loggé, pour que le texte
-        // (pas juste "message audio") entre dans l'historique utilisé par
-        // l'IA. Un échec de transcription dégrade gracieusement : le
-        // message est quand même sauvegardé (sans contenu texte).
-        // Tout média (vocal, image, document, vidéo) est aussi retéléchargé
-        // et stocké dans le bucket privé whatsapp-media, sinon il devient
-        // inaccessible après expiration de l'URL Meta (quelques minutes) et
-        // ne peut plus jamais s'afficher dans l'historique Admin.
-        let messageContent = message.text?.body ?? null;
-        let mediaPath: string | null = null;
-        let mediaMimeType: string | null = null;
-
-        const mediaRef =
-          message.type === "audio"
-            ? message.audio
-            : message.type === "image"
-              ? message.image
-              : message.type === "video"
-                ? message.video
-                : message.type === "document"
-                  ? message.document
-                  : null;
-
-        if (mediaRef?.id) {
-          try {
-            const { buffer, mimeType } = await downloadWhatsappMedia(mediaRef.id);
-            mediaMimeType = mediaRef.mime_type ?? mimeType;
-            mediaPath = await uploadWhatsappMedia(supabase, buffer, mediaMimeType, phone);
-            console.log("[whatsapp-webhook] média entrant stocké", {
-              waMessageId: message.id,
-              type: message.type,
-              mediaPath,
-              mediaMimeType,
-              bytes: buffer.length,
-            });
-
-            // La transcription est isolée dans son propre try/catch : un
-            // échec Groq (rate limit, timeout) ne doit jamais faire perdre
-            // le média déjà téléchargé et stocké — le vocal doit rester
-            // jouable même sans texte.
-            if (message.type === "audio") {
-              try {
-                messageContent = await transcribeAudio(buffer, mediaMimeType);
-                console.log("[whatsapp-webhook] audio transcribed", { waMessageId: message.id, transcript: messageContent });
-              } catch (transcribeErr) {
-                console.error("[whatsapp-webhook] audio transcription FAILED (média conservé)", {
-                  waMessageId: message.id,
-                  error: transcribeErr,
-                });
-              }
-            } else {
-              messageContent =
-                (mediaRef as { caption?: string }).caption ??
-                (message.type === "document" ? (mediaRef as { filename?: string }).filename ?? null : null);
-            }
-          } catch (err) {
-            console.error("[whatsapp-webhook] media download/store FAILED", { waMessageId: message.id, type: message.type, error: err });
-          }
-        }
+        const { content: messageContent, mediaPath, mediaMimeType } = await resolveInboundMedia(message, phone, supabase);
 
         const { error: messageError } = await supabase.from("whatsapp_messages").insert({
           profile_id: profile?.id ?? null,
