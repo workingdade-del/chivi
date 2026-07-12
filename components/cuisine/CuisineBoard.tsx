@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { NEXT_STATUS } from "@/lib/order-status";
+import { CancelOrderModal } from "@/components/shared/CancelOrderModal";
 import type { OrderStatus } from "@/lib/supabase/types";
 
 interface TicketItem {
@@ -64,6 +65,7 @@ export function CuisineBoard() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [cancelTicket, setCancelTicket] = useState<Ticket | null>(null);
 
   const fetchTickets = useCallback(async () => {
     const supabase = createClient();
@@ -214,6 +216,15 @@ export function CuisineBoard() {
                   >
                     {ADVANCE_LABEL[t.status]}
                   </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCancelTicket(t);
+                    }}
+                    className="w-full py-2 rounded-xl border border-[#5a2a2a] text-[#ff8f82] font-semibold text-[.85em]"
+                  >
+                    Annuler la commande
+                  </button>
                 </div>
               );
             })}
@@ -297,8 +308,27 @@ export function CuisineBoard() {
             >
               {ADVANCE_LABEL[openTicket.status]}
             </button>
+            <button
+              onClick={() => setCancelTicket(openTicket)}
+              className="mt-2.5 w-full min-h-[44px] py-3 rounded-2xl border border-[#5a2a2a] text-[#ff8f82] font-bold text-sm"
+            >
+              Annuler la commande
+            </button>
           </div>
         </div>
+      )}
+
+      {cancelTicket && (
+        <CancelOrderModal
+          orderId={cancelTicket.id}
+          orderNumber={cancelTicket.order_number}
+          onClose={() => setCancelTicket(null)}
+          onCancelled={() => {
+            setCancelTicket(null);
+            setOpenId(null);
+            fetchTickets();
+          }}
+        />
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/admin/Sidebar";
 import { TopBar } from "@/components/admin/TopBar";
 import { PauseBanner } from "@/components/admin/PauseBanner";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
+import { InboundMessageNotifier } from "@/components/shared/InboundMessageNotifier";
 import { getSystemSettings } from "@/lib/system-settings";
 
 export const metadata: Metadata = {
@@ -21,12 +22,13 @@ export default async function AdminShellLayout({ children }: { children: React.R
   return (
     <div className="min-h-screen bg-app-admin flex flex-col">
       <RegisterServiceWorker scope="admin" />
+      <InboundMessageNotifier />
       <PauseBanner initial={settings} />
       <div className="flex-1 min-h-0 flex">
         <Sidebar />
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           <TopBar initialPaused={settings.isPaused} />
-          <div className="flex-1 overflow-y-auto px-7 pt-6 pb-8">{children}</div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-7 pt-6 pb-8">{children}</div>
         </div>
       </div>
     </div>

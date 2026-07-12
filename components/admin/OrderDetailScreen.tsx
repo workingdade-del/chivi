@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
-import { CLIENT_TIMELINE, STATUS_LABELS, clientTimelineIndex } from "@/lib/order-status";
+import { CLIENT_TIMELINE, STATUS_LABELS, STATUS_COLORS, clientTimelineIndex } from "@/lib/order-status";
+import { CancelOrderModal } from "@/components/shared/CancelOrderModal";
 import type { OrderDetailData } from "@/lib/admin";
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -26,6 +27,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
   const [assigning, setAssigning] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   const assignment = order.order_assignments?.[0];
   const driver = assignment?.drivers ?? null;
@@ -88,6 +90,22 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
     router.refresh();
   }
 
+  async function handleRelaunch() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${order.id}/relaunch`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Échec de la relance");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Échec de la relance");
+    } finally {
+      setBusy(false);
+      router.refresh();
+    }
+  }
+
   return (
     <div className="grid gap-4" style={{ gridTemplateColumns: "1.5fr 1fr" }}>
       <div className="bg-white border border-[#ece2cd] rounded-2xl p-[22px]">
@@ -99,7 +117,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
               {PAYMENT_LABELS[order.payment_method]}
             </div>
           </div>
-          <span className="text-[13px] font-bold px-3.5 py-1.5 rounded-full bg-[rgba(231,50,35,.14)] text-[#c0392b]">
+          <span className={`text-[13px] font-bold px-3.5 py-1.5 rounded-full ${STATUS_COLORS[order.status]}`}>
             {STATUS_LABELS[order.status]}
           </span>
         </div>
@@ -224,7 +242,38 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
             </button>
           )}
         </div>
+
+        {order.status !== "livree" && order.status !== "annulee" && (
+          <button
+            onClick={() => setShowCancelModal(true)}
+            disabled={busy}
+            className="w-full py-3 rounded-xl border-2 border-chilli text-chilli font-bold text-sm disabled:opacity-50"
+          >
+            Annuler la commande
+          </button>
+        )}
+        {order.status === "annulee" && (
+          <button
+            onClick={handleRelaunch}
+            disabled={busy}
+            className="w-full py-3 rounded-xl bg-maroon text-gold font-bold text-sm disabled:opacity-50"
+          >
+            Relancer la commande
+          </button>
+        )}
       </div>
+
+      {showCancelModal && (
+        <CancelOrderModal
+          orderId={order.id}
+          orderNumber={order.order_number}
+          onClose={() => setShowCancelModal(false)}
+          onCancelled={() => {
+            setShowCancelModal(false);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

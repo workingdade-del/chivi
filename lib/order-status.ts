@@ -20,6 +20,16 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   annulee: "Annulée",
 };
 
+/** annulee est délibérément grise (pas rouge) pour ne pas se confondre visuellement avec en_preparation/prete. */
+export const STATUS_COLORS: Record<OrderStatus, string> = {
+  recue: "bg-[rgba(255,182,0,.16)] text-[#a6740a]",
+  en_preparation: "bg-[rgba(231,50,35,.14)] text-[#c0392b]",
+  prete: "bg-[rgba(231,50,35,.14)] text-[#c0392b]",
+  en_route: "bg-status-blue-bg text-status-blue",
+  livree: "bg-status-green-bg text-status-green-deep",
+  annulee: "bg-[#e9e4da] text-[#79706e]",
+};
+
 /** Statuts que la cuisine affiche sur son tableau de tickets. */
 export const CUISINE_STATUSES: OrderStatus[] = ["recue", "en_preparation", "prete"];
 

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Send, UserRound, Bike, HelpCircle, Plus, X, Mic, Square, Paperclip, FileText, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/image-compress";
+import { useStaffNotificationsStore, isConversationUnread } from "@/lib/store/staff-notifications";
+import { avatarColorFor } from "@/lib/avatar-color";
 
 interface ConversationSummary {
   normalized_phone: string;
@@ -57,6 +59,7 @@ function pickRecordingMimeType(): string {
 }
 
 export function ConversationsScreen() {
+  const lastViewedByPhone = useStaffNotificationsStore((s) => s.lastViewedByPhone);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
   const [messages, setMessages] = useState<WhatsappMessageRow[]>([]);
@@ -113,6 +116,9 @@ export function ConversationsScreen() {
         const row = (payload.new ?? payload.old) as { normalized_phone?: string } | null;
         if (row?.normalized_phone && row.normalized_phone === selectedPhoneRef.current) {
           fetchMessages(row.normalized_phone);
+          // La conversation ouverte reste "lue" même si un nouveau message
+          // entrant arrive pendant qu'on la regarde déjà.
+          useStaffNotificationsStore.getState().markViewed(row.normalized_phone);
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, () => fetchConversations())
@@ -124,7 +130,10 @@ export function ConversationsScreen() {
   }, [fetchConversations, fetchMessages]);
 
   useEffect(() => {
-    if (selectedPhone) fetchMessages(selectedPhone);
+    if (selectedPhone) {
+      fetchMessages(selectedPhone);
+      useStaffNotificationsStore.getState().markViewed(selectedPhone);
+    }
   }, [selectedPhone, fetchMessages]);
 
   useEffect(() => {
@@ -331,7 +340,7 @@ export function ConversationsScreen() {
   }
 
   return (
-    <div className="flex gap-4 h-full">
+    <div className="flex gap-4 h-full min-h-0">
       <div className="w-[340px] flex-none bg-white border border-[#ece2cd] rounded-2xl overflow-y-auto flex flex-col">
         <div className="flex-none p-3 border-b border-[#f3ecdd]">
           <button
@@ -352,6 +361,7 @@ export function ConversationsScreen() {
           const active = c.normalized_phone === selectedPhone;
           const badge = contactBadge(c.contact_type);
           const BadgeIcon = badge.icon;
+          const unread = isConversationUnread(lastViewedByPhone, c.normalized_phone, c.last_direction, c.last_message_at);
           return (
             <button
               key={c.normalized_phone}
@@ -360,17 +370,23 @@ export function ConversationsScreen() {
                 active ? "bg-[#faf4e8]" : "bg-white"
               }`}
             >
-              <div className="w-10 h-10 flex-none rounded-full bg-[#f4ead2] text-maroon flex items-center justify-center font-mega">
+              <div
+                className="w-10 h-10 flex-none rounded-full flex items-center justify-center font-mega"
+                style={{ background: avatarColorFor(c.normalized_phone).bg, color: avatarColorFor(c.normalized_phone).text }}
+              >
                 {initialOf(c.contact_name, c.phone)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <b className="font-semibold text-[14px] text-ink truncate">{c.contact_name || c.phone}</b>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {unread && <span className="w-2 h-2 flex-none rounded-full bg-chilli" />}
+                    <b className={`text-[14px] text-ink truncate ${unread ? "font-bold" : "font-semibold"}`}>{c.contact_name || c.phone}</b>
+                  </span>
                   <span className="text-[11px] text-[#9a8b78] flex-none">
                     {new Date(c.last_message_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
-                <div className="text-[12.5px] text-[#9a8b78] truncate mt-0.5">
+                <div className={`text-[12.5px] truncate mt-0.5 ${unread ? "text-ink font-medium" : "text-[#9a8b78]"}`}>
                   {c.last_direction === "outbound" ? "Vous : " : ""}
                   {c.last_message ?? (c.last_message_type === "audio" ? "🎤 Message vocal" : c.last_message_type === "image" ? "📷 Image" : c.last_message_type === "document" ? "📄 Document" : c.last_message_type)}
                 </div>
@@ -396,7 +412,7 @@ export function ConversationsScreen() {
         })}
       </div>
 
-      <div className="flex-1 min-w-0 bg-white border border-[#ece2cd] rounded-2xl flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 bg-white border border-[#ece2cd] rounded-2xl flex flex-col">
         {!selected && (
           <div className="flex-1 flex items-center justify-center text-[#9a8b78] text-sm">
             Sélectionne une conversation pour voir l&apos;historique.
@@ -436,7 +452,7 @@ export function ConversationsScreen() {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-2.5 bg-[#faf6ee]">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 flex flex-col gap-2.5 bg-[#faf6ee]">
               {messages.map((m) => {
                 const url = m.media_path ? mediaUrls[m.media_path] : null;
                 return (

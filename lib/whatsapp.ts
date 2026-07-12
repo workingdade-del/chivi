@@ -309,6 +309,13 @@ export function buildPauseAutoReply(reason: string): string {
   return `Bonjour ! 😔 Nous sommes momentanément indisponibles.\nRaison : ${reason}.\nNous reviendrons très bientôt. Pour toute urgence, contactez notre support : wa.me/22959398724`;
 }
 
+export function buildOrderCancelledMessage(reason?: string | null): string {
+  const parts = ["Votre commande a été annulée."];
+  if (reason?.trim()) parts.push(`${reason.trim()}.`);
+  parts.push("Contactez-nous si besoin.");
+  return parts.join(" ");
+}
+
 export function buildResumeMessage(): string {
   return "Bonne nouvelle ! 🎉 CHIVI est de nouveau disponible. Vous pouvez commander maintenant !";
 }

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { ClipboardList, Receipt, Boxes, Calculator, MessagesSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CUISINE_NAV } from "@/lib/cuisine-nav";
+import { useUnreadConversations } from "@/lib/hooks/useUnreadConversations";
 
 const ICONS = { ClipboardList, Receipt, Boxes, Calculator, MessagesSquare };
 
@@ -12,6 +13,7 @@ const ICONS = { ClipboardList, Receipt, Boxes, Calculator, MessagesSquare };
 export function CuisineSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const unreadConversations = useUnreadConversations();
 
   async function handleLogout() {
     const supabase = createClient();
@@ -33,6 +35,7 @@ export function CuisineSidebar() {
       {CUISINE_NAV.map((n) => {
         const active = n.match(pathname);
         const Icon = ICONS[n.icon];
+        const badgeCount = n.href === "/cuisine/conversations" ? unreadConversations : 0;
         return (
           <Link
             key={n.href}
@@ -43,6 +46,14 @@ export function CuisineSidebar() {
           >
             <Icon size={19} strokeWidth={2} className={active ? "" : "opacity-85"} />
             <span className="flex-1">{n.label}</span>
+            {badgeCount > 0 && (
+              <span
+                className="text-[11px] font-bold min-w-5 h-5 rounded-full flex items-center justify-center px-1.5"
+                style={active ? { background: "var(--chivi-maroon-deep)", color: "var(--chivi-gold)" } : { background: "var(--chivi-chilli)", color: "#fff" }}
+              >
+                {badgeCount}
+              </span>
+            )}
           </Link>
         );
       })}

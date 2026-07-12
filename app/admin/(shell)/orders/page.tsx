@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getOrders } from "@/lib/admin";
-import { STATUS_LABELS } from "@/lib/order-status";
+import { STATUS_LABELS, STATUS_COLORS } from "@/lib/order-status";
 import { formatFcfa } from "@/lib/format";
 import { RealtimeRefresh } from "@/components/admin/RealtimeRefresh";
 import type { OrderStatus } from "@/lib/supabase/types";
@@ -11,15 +11,6 @@ const FILTERS: { id: OrderStatus | "all"; label: string }[] = [
   { id: "en_preparation", label: "En préparation" },
   { id: "en_route", label: "En route" },
 ];
-
-const STATUS_BADGE: Record<OrderStatus, string> = {
-  recue: "bg-[rgba(255,182,0,.16)] text-[#a6740a]",
-  en_preparation: "bg-[rgba(231,50,35,.14)] text-[#c0392b]",
-  prete: "bg-[rgba(231,50,35,.14)] text-[#c0392b]",
-  en_route: "bg-status-blue-bg text-status-blue",
-  livree: "bg-status-green-bg text-status-green-deep",
-  annulee: "bg-[#fbe8e6] text-[#c0392b]",
-};
 
 export default async function AdminOrdersPage({ searchParams }: { searchParams: { status?: string } }) {
   const activeFilter = (searchParams.status as OrderStatus | "all") || "all";
@@ -70,7 +61,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
               </span>
             </span>
             <span>
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[o.status]}`}>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${STATUS_COLORS[o.status]}`}>
                 {STATUS_LABELS[o.status]}
               </span>
             </span>

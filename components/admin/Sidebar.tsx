@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, ClipboardList, MessagesSquare, Bike, UtensilsCrossed, BarChart3, Users, Boxes, Megaphone, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useUnreadConversations } from "@/lib/hooks/useUnreadConversations";
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutGrid, match: (p: string) => p === "/admin" },
@@ -24,6 +25,7 @@ export function Sidebar() {
   const router = useRouter();
   const [pendingCount, setPendingCount] = useState(0);
   const [email, setEmail] = useState("");
+  const unreadConversations = useUnreadConversations();
 
   useEffect(() => {
     const supabase = createClient();
@@ -64,11 +66,12 @@ export function Sidebar() {
           style={{ backgroundImage: "url('/brand_kit/assets/logo/chivi-wordmark-gold.png')" }}
         />
       </div>
-      <div className="text-[10px] tracking-[.14em] uppercase text-cream/50 px-3 pb-2">Console admin</div>
+      <div className="text-[10px] tracking-[.14em] uppercase text-gold px-3 pb-2">Console admin</div>
 
       {NAV.map((n) => {
         const active = n.match(pathname);
         const Icon = n.icon;
+        const badgeCount = n.href === "/admin/orders" ? pendingCount : n.href === "/admin/conversations" ? unreadConversations : 0;
         return (
           <Link
             key={n.href}
@@ -79,7 +82,7 @@ export function Sidebar() {
           >
             <Icon size={20} strokeWidth={2} className={active ? "" : "opacity-85"} />
             <span className="flex-1">{n.label}</span>
-            {n.href === "/admin/orders" && pendingCount > 0 && (
+            {badgeCount > 0 && (
               <span
                 className="text-[11px] font-bold min-w-5 h-5 rounded-full flex items-center justify-center px-1.5"
                 style={
@@ -88,7 +91,7 @@ export function Sidebar() {
                     : { background: "var(--chivi-chilli)", color: "#fff" }
                 }
               >
-                {pendingCount}
+                {badgeCount}
               </span>
             )}
           </Link>
@@ -104,7 +107,7 @@ export function Sidebar() {
         </div>
         <div className="min-w-0">
           <div className="text-white font-bold text-[13px] truncate">{email || "Équipe CHIVI"}</div>
-          <div className="text-cream/60 text-[11px]">Se déconnecter</div>
+          <div className="text-gold text-[11px]">Se déconnecter</div>
         </div>
       </button>
     </div>
