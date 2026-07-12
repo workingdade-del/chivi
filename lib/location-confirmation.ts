@@ -2,17 +2,20 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { reverseGeocode, searchPlace } from "@/lib/nominatim";
 import { extractLocationFromText } from "@/lib/location-ai";
 import { haversineKm, computeDeliveryFee, KITCHEN_ORIGIN } from "@/lib/distance";
-import { createOrderFromFlowCart, type FlowCartState } from "@/lib/create-order-from-flow";
+import { sendOrderRecap } from "@/lib/order-validation";
+import type { FlowCartState } from "@/lib/create-order-from-flow";
+import { sendAdminLocationEscalationNotification } from "@/lib/email";
 import {
   sendWhatsappText,
   buildLocationConfirmationMessage,
   buildLocationNotFoundMessage,
   buildDeliveryFeeMessage,
-  buildDeliveryFeePendingMessage,
-  buildDriverQuoteRequestMessage,
+  buildOutOfZoneMessage,
+  buildLocationEscalationMessage,
 } from "@/lib/whatsapp";
 
 const GENERIC_GPS_ADDRESS = "Position partagée via GPS";
+const MAX_LOCATION_ATTEMPTS = 3;
 
 /** Y a-t-il une confirmation d'adresse en attente pour ce numéro ? Détermine si le prochain texte doit être routé vers handleLocationTextReply. */
 export async function getPendingConfirmationId(phone: string): Promise<string | null> {
@@ -53,10 +56,60 @@ export function isOuiConfirmation(text: string): boolean {
 }
 
 /**
- * Calcule et applique le tarif une fois la position définitivement retenue
- * (après confirmation "OUI"). Si la position provient d'un WhatsApp Flow
- * (flowToken renseigné), la commande est finalisée directement à partir du
- * panier de la session au lieu de simplement annoncer le tarif.
+ * Consomme une tentative de détection de position pour cette session Flow.
+ * Retourne false si la limite (3) est déjà atteinte — l'appelant doit alors
+ * escalader plutôt que relancer Groq/Nominatim indéfiniment. Sans flowToken
+ * (position hors contexte d'une commande en cours), aucune limite ne
+ * s'applique.
+ */
+async function tryConsumeLocationAttempt(flowToken: string | null): Promise<boolean> {
+  if (!flowToken) return true;
+
+  const supabase = createServiceClient();
+  const { data: session } = await supabase
+    .from("flow_sessions")
+    .select("location_attempts")
+    .eq("flow_token", flowToken)
+    .maybeSingle();
+  const attempts = session?.location_attempts ?? 0;
+
+  if (attempts >= MAX_LOCATION_ATTEMPTS) {
+    return false;
+  }
+
+  await supabase.from("flow_sessions").update({ location_attempts: attempts + 1 }).eq("flow_token", flowToken);
+  console.log("[location-confirmation] tentative de localisation", { flowToken, attempt: attempts + 1, max: MAX_LOCATION_ATTEMPTS });
+  return true;
+}
+
+/** Après 3 échecs : on arrête d'insister, on prévient le client, on coupe l'IA sur cette conversation et on notifie l'admin. */
+async function escalateLocationFailure(phone: string, profileId: string | null, flowToken: string) {
+  const supabase = createServiceClient();
+  console.log("[location-confirmation] transition awaiting_location -> escalated (limite de tentatives atteinte)", { phone, flowToken });
+
+  try {
+    await sendWhatsappText(phone, buildLocationEscalationMessage());
+  } catch (err) {
+    console.error("[location-confirmation] failed to send escalation message", err);
+  }
+
+  if (profileId) {
+    await supabase.from("profiles").update({ ai_active: false }).eq("id", profileId);
+  }
+  await supabase.from("flow_sessions").update({ status: "escalated" }).eq("flow_token", flowToken);
+
+  await sendAdminLocationEscalationNotification({ phone }).catch((err) =>
+    console.error("[location-confirmation] admin escalation email FAILED", err)
+  );
+}
+
+/**
+ * Calcule le tarif une fois la position définitivement retenue (après
+ * confirmation "OUI"). Au-delà de 15km (hors zone Cotonou / Abomey-Calavi),
+ * on refuse proprement plutôt que de laisser espérer une livraison qui
+ * n'aura pas lieu. En dessous, si la position vient d'un WhatsApp Flow
+ * (flowToken renseigné), on passe au récapitulatif + validation plutôt que
+ * de finaliser directement la commande.
  */
 async function applyDeliveryFee(
   phone: string,
@@ -69,80 +122,49 @@ async function applyDeliveryFee(
   const distanceKm = haversineKm(KITCHEN_ORIGIN.lat, KITCHEN_ORIGIN.lng, lat, lng);
   const { fee, needsConfirmation } = computeDeliveryFee(distanceKm);
 
-  if (!needsConfirmation && fee !== null) {
+  if (needsConfirmation || fee === null) {
+    console.log("[location-confirmation] adresse hors zone de livraison", { phone, distanceKm, flowToken });
+    try {
+      await sendWhatsappText(phone, buildOutOfZoneMessage());
+    } catch (err) {
+      console.error("[location-confirmation] failed to send out-of-zone message", err);
+    }
     if (flowToken) {
-      await finalizeFlowOrder(flowToken, phone, profileId, address, lat, lng, fee);
+      const supabase = createServiceClient();
+      await supabase.from("flow_sessions").update({ status: "cancelled" }).eq("flow_token", flowToken);
+      console.log("[location-confirmation] transition -> cancelled (hors zone)", { flowToken });
+    }
+    return;
+  }
+
+  if (flowToken) {
+    const supabase = createServiceClient();
+    const { data: session } = await supabase.from("flow_sessions").select("cart").eq("flow_token", flowToken).maybeSingle();
+    if (!session) {
+      console.warn("[location-confirmation] no flow_session found for flow_token", { flowToken });
       return;
     }
-    try {
-      await sendWhatsappText(phone, buildDeliveryFeeMessage(distanceKm, fee));
-    } catch (err) {
-      console.error("[location-confirmation] failed to send delivery fee message", err);
-    }
+    await sendOrderRecap(flowToken, phone, session.cart as unknown as FlowCartState, address, lat, lng, fee);
     return;
   }
 
   try {
-    await sendWhatsappText(phone, buildDeliveryFeePendingMessage());
+    await sendWhatsappText(phone, buildDeliveryFeeMessage(distanceKm, fee));
   } catch (err) {
-    console.error("[location-confirmation] failed to send delivery fee pending message", err);
+    console.error("[location-confirmation] failed to send delivery fee message", err);
   }
-
-  const supabase = createServiceClient();
-  const { data: drivers } = await supabase
-    .from("drivers")
-    .select("id, name, phone")
-    .eq("is_active", true)
-    .eq("is_available", true)
-    .eq("status", "libre");
-
-  const driver = drivers?.[0];
-  if (!driver) {
-    console.warn("[location-confirmation] no available driver to confirm out-of-range delivery quote", { phone, distanceKm });
-    return;
-  }
-
-  await supabase.from("pending_delivery_quotes").insert({ profile_id: profileId, phone, distance_km: distanceKm, driver_id: driver.id });
-
-  try {
-    await sendWhatsappText(driver.phone, buildDriverQuoteRequestMessage(distanceKm));
-  } catch (err) {
-    console.error("[location-confirmation] failed to send driver quote request", err);
-  }
-}
-
-/** Une fois une commande WhatsApp Flow au stade localisation, on la finalise directement plutôt que de juste annoncer le tarif. */
-async function finalizeFlowOrder(
-  flowToken: string,
-  phone: string,
-  profileId: string | null,
-  address: string,
-  lat: number,
-  lng: number,
-  fee: number
-) {
-  const supabase = createServiceClient();
-  const { data: session } = await supabase.from("flow_sessions").select("cart").eq("flow_token", flowToken).maybeSingle();
-  if (!session) {
-    console.warn("[location-confirmation] no flow_session found for flow_token", { flowToken });
-    return;
-  }
-
-  await createOrderFromFlowCart({
-    phone,
-    profileId,
-    cart: session.cart as unknown as FlowCartState,
-    deliveryAddress: address,
-    deliveryLat: lat,
-    deliveryLng: lng,
-    deliveryFee: fee,
-  });
-
-  await supabase.from("flow_sessions").update({ status: "completed" }).eq("flow_token", flowToken);
 }
 
 /** Position GPS partagée nativement sur WhatsApp : reverse-geocode Nominatim + demande de confirmation texte ("OUI"). */
 export async function handleGpsLocation(profileId: string | null, phone: string, lat: number, lng: number, flowToken: string | null = null) {
+  if (flowToken) {
+    const canProceed = await tryConsumeLocationAttempt(flowToken);
+    if (!canProceed) {
+      await escalateLocationFailure(phone, profileId, flowToken);
+      return;
+    }
+  }
+
   const supabase = createServiceClient();
   if (profileId) {
     await supabase.from("profiles").update({ delivery_lat: lat, delivery_lng: lng }).eq("id", profileId);
@@ -176,6 +198,14 @@ export async function handleGpsLocation(profileId: string | null, phone: string,
 
 /** Description libre (texte ou audio transcrit) : Groq identifie le lieu, Nominatim le recherche, on redemande confirmation ("OUI"). */
 export async function handleTextLocation(profileId: string | null, phone: string, text: string, flowToken: string | null = null) {
+  if (flowToken) {
+    const canProceed = await tryConsumeLocationAttempt(flowToken);
+    if (!canProceed) {
+      await escalateLocationFailure(phone, profileId, flowToken);
+      return;
+    }
+  }
+
   const extracted = await extractLocationFromText(text);
   if (!extracted) {
     try {
@@ -226,7 +256,7 @@ export async function handleTextLocation(profileId: string | null, phone: string
  * Le client répond à la proposition d'adresse en texte libre : "OUI" (ou
  * variante) confirme, tout autre texte est traité comme une description
  * corrigée qui relance la détection (Groq + Nominatim) sur cette nouvelle
- * description.
+ * description — jusqu'à la limite de tentatives (voir tryConsumeLocationAttempt).
  */
 export async function handleLocationTextReply(confirmationId: string, phone: string, replyText: string) {
   const supabase = createServiceClient();
@@ -248,6 +278,7 @@ export async function handleLocationTextReply(confirmationId: string, phone: str
         .eq("id", row.profile_id);
     }
 
+    console.log("[location-confirmation] adresse confirmée par le client", { phone, flowToken: row.flow_token });
     await applyDeliveryFee(phone, row.candidate_lat, row.candidate_lng, row.profile_id, row.flow_token, row.candidate_address);
     return;
   }

@@ -123,6 +123,36 @@ export async function sendAdminOrderNotification(params: {
   }
 }
 
+/** Notifie l'admin qu'une commande WhatsApp est bloquée après 3 échecs de localisation — l'IA a été désactivée sur cette conversation, prise en main manuelle nécessaire. */
+export async function sendAdminLocationEscalationNotification(params: { phone: string }): Promise<void> {
+  const resend = getResendClient();
+  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL;
+  if (!resend || !adminEmail) {
+    console.warn("[email] RESEND_API_KEY ou ADMIN_NOTIFICATION_EMAIL absente — notification d'escalade non envoyée");
+    return;
+  }
+
+  const html = brandedShell(
+    "Localisation échouée",
+    `
+    <p style="font-size:15px;">Un client n'a pas pu être localisé après 3 tentatives et l'IA a été désactivée sur sa conversation.</p>
+    <p style="font-size:13px;color:#6d6358;"><b>Numéro :</b> ${params.phone}</p>
+    <p style="font-size:13px;color:#6d6358;">Reprends la main dans la console Admin &gt; Conversations pour finaliser sa commande manuellement.</p>
+    `
+  );
+
+  try {
+    await resend.emails.send({
+      from: FROM_ADDRESS,
+      to: adminEmail,
+      subject: `CHIVI — Localisation échouée (${params.phone})`,
+      html,
+    });
+  } catch (err) {
+    console.error("[email] échec notification escalade localisation", { phone: params.phone, error: err });
+  }
+}
+
 /**
  * Envoie une newsletter à une liste d'emails, un par un (Resend n'a pas de
  * vraie API "broadcast" simple à ce volume). Retourne le nombre envoyé avec

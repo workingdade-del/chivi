@@ -4,10 +4,16 @@ import {
   DRIVER_AVAILABLE_BUTTON_ID,
   DRIVER_UNAVAILABLE_BUTTON_ID,
   DELIVERY_DONE_BUTTON_PREFIX,
+  ORDER_VALIDATE_BUTTON_ID,
+  ORDER_CANCEL_BUTTON_ID,
+  PAYMENT_CASH_BUTTON_ID,
+  PAYMENT_MOMO_LIVRAISON_BUTTON_ID,
+  PAYMENT_MOMO_AVANCE_BUTTON_ID,
   buildPauseAutoReply,
   buildPostDeliveryFeedbackMessage,
   buildDeliveryFeeConfirmedMessage,
   buildLocationRequestMessage,
+  buildFlowWelcomeMessage,
   downloadWhatsappMedia,
   normalizePhone,
   sendWhatsappText,
@@ -29,6 +35,7 @@ import {
   getPendingConfirmationId,
   getAwaitingLocationFlowToken,
 } from "@/lib/location-confirmation";
+import { handleOrderValidationReply, handlePaymentMethodReply } from "@/lib/order-validation";
 
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
@@ -206,7 +213,7 @@ function isFlowTrigger(text: string): boolean {
   return FLOW_TRIGGER_KEYWORDS.some((k) => normalized.includes(k));
 }
 
-/** Crée une session panier (flow_sessions) et envoie le Flow. Ne doit jamais faire échouer le webhook. */
+/** Crée une session panier (flow_sessions), accueille chaleureusement le client, puis envoie le Flow. Ne doit jamais faire échouer le webhook. */
 async function handleFlowTrigger(profileId: string | null, phone: string) {
   const supabase = createServiceClient();
   const { data: session, error } = await supabase
@@ -218,6 +225,14 @@ async function handleFlowTrigger(profileId: string | null, phone: string) {
   if (error || !session) {
     console.error("[whatsapp-webhook] failed to create flow_session", error);
     return;
+  }
+
+  console.log("[whatsapp-webhook] transition -> cart (nouvelle session Flow)", { flowToken: session.flow_token, phone });
+
+  try {
+    await sendWhatsappText(phone, buildFlowWelcomeMessage());
+  } catch (err) {
+    console.error("[whatsapp-webhook] failed to send flow welcome message", err);
   }
 
   try {
@@ -703,6 +718,28 @@ export async function POST(req: NextRequest) {
         } else if (message.type === "interactive" && message.interactive?.type === "nfm_reply" && message.interactive.nfm_reply) {
           console.log("[whatsapp-webhook] WhatsApp Flow completed", { profileId: profile?.id });
           await handleFlowCompletion(phone, message.interactive.nfm_reply);
+        } else if (
+          message.type === "interactive" &&
+          message.interactive?.type === "button_reply" &&
+          (message.interactive.button_reply?.id === ORDER_VALIDATE_BUTTON_ID || message.interactive.button_reply?.id === ORDER_CANCEL_BUTTON_ID)
+        ) {
+          console.log("[whatsapp-webhook] customer replying to order recap validation", {
+            profileId: profile?.id,
+            buttonId: message.interactive.button_reply?.id,
+          });
+          await handleOrderValidationReply(phone, message.interactive.button_reply!.id);
+        } else if (
+          message.type === "interactive" &&
+          message.interactive?.type === "button_reply" &&
+          [PAYMENT_CASH_BUTTON_ID, PAYMENT_MOMO_LIVRAISON_BUTTON_ID, PAYMENT_MOMO_AVANCE_BUTTON_ID].includes(
+            message.interactive.button_reply?.id ?? ""
+          )
+        ) {
+          console.log("[whatsapp-webhook] customer selecting payment method", {
+            profileId: profile?.id,
+            buttonId: message.interactive.button_reply?.id,
+          });
+          await handlePaymentMethodReply(phone, message.interactive.button_reply!.id);
         } else if (awaitingLocationFlowToken && messageContent && (message.type === "text" || message.type === "audio")) {
           console.log("[whatsapp-webhook] customer replying with delivery location after Flow checkout", { profileId: profile?.id });
           await handleTextLocation(profile?.id ?? null, phone, messageContent, awaitingLocationFlowToken);

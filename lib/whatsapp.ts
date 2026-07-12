@@ -203,7 +203,7 @@ export async function sendWhatsappAvailabilityRequest(to: string, driverName: st
 }
 
 export function buildLocationConfirmationMessage(address: string): string {
-  return `📍 J'ai détecté votre position : ${address}\nEst-ce bien votre lieu de livraison ?\nRépondez OUI pour confirmer ou décrivez mieux votre position.`;
+  return `📍 J'ai trouvé : ${address}.\nC'est bien ça ? Répondez OUI pour confirmer ou décrivez plus précisément.`;
 }
 
 export function buildLocationNotFoundMessage(): string {
@@ -211,7 +211,123 @@ export function buildLocationNotFoundMessage(): string {
 }
 
 export function buildLocationRequestMessage(): string {
-  return "Parfait, ta commande est enregistrée ! 📍 Décris ta position (quartier, repère…) ou envoie ta localisation WhatsApp (📎 → Localisation) pour qu'on calcule les frais de livraison.";
+  return [
+    "Parfait ! 📍 Où souhaitez-vous être livré ? Vous pouvez :",
+    "- Envoyer votre position (📎 → Localisation)",
+    "- Décrire votre adresse en texte",
+    "- Envoyer un message vocal avec l'adresse",
+  ].join("\n");
+}
+
+export function buildFlowWelcomeMessage(): string {
+  return "Bonjour ! 😊 Bienvenue chez CHIVI. Découvrez notre menu et composez votre commande directement ici 👇";
+}
+
+export function buildOutOfZoneMessage(): string {
+  return "😔 Désolé, cette adresse semble en dehors de notre zone de livraison actuelle (Cotonou et Abomey-Calavi). Nous ne pouvons pas livrer à cet endroit pour le moment.";
+}
+
+export function buildLocationEscalationMessage(): string {
+  return "Je n'arrive pas à localiser précisément votre position. 😔 Un membre de notre équipe va vous contacter pour finaliser votre commande.";
+}
+
+export function buildOrderCancelledByCustomerMessage(): string {
+  return "Commande annulée. N'hésitez pas à recommencer quand vous voulez ! 😊";
+}
+
+export function buildOrderRecapMessage(params: {
+  lines: { productName: string; variantName: string | null; quantity: number; lineTotal: number }[];
+  subtotal: number;
+  deliveryFee: number;
+  address: string;
+}): string {
+  const itemsText = params.lines
+    .map((l) => `${l.quantity}x ${l.productName}${l.variantName ? ` (${l.variantName})` : ""} — ${l.lineTotal.toLocaleString("fr-FR")} FCFA`)
+    .join("\n");
+  const total = params.subtotal + params.deliveryFee;
+  return [
+    "📋 Récapitulatif de votre commande :",
+    itemsText,
+    `Sous-total : ${params.subtotal.toLocaleString("fr-FR")} FCFA`,
+    `Livraison : ${params.deliveryFee.toLocaleString("fr-FR")} FCFA`,
+    "_(le prix de livraison peut légèrement varier, vous serez notifié en cas de changement)_",
+    `💰 Total : ${total.toLocaleString("fr-FR")} FCFA`,
+    `📍 Livraison : ${params.address}`,
+  ].join("\n");
+}
+
+export const ORDER_VALIDATE_BUTTON_ID = "order_validate";
+export const ORDER_CANCEL_BUTTON_ID = "order_cancel";
+
+/** Boutons "✅ Valider" / "❌ Annuler" sous le récapitulatif de commande. */
+export async function sendOrderRecapButtons(to: string, recapText: string) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: recapText },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: ORDER_VALIDATE_BUTTON_ID, title: "✅ Valider" } },
+            { type: "reply", reply: { id: ORDER_CANCEL_BUTTON_ID, title: "❌ Annuler" } },
+          ],
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
+export const PAYMENT_CASH_BUTTON_ID = "payment_cash_livraison";
+export const PAYMENT_MOMO_LIVRAISON_BUTTON_ID = "payment_momo_livraison";
+export const PAYMENT_MOMO_AVANCE_BUTTON_ID = "payment_momo_avance";
+
+/** Boutons de choix du mode de paiement (3 = maximum autorisé par l'API WhatsApp). */
+export async function sendPaymentMethodButtons(to: string) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: "💳 Comment souhaitez-vous payer ?" },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: PAYMENT_CASH_BUTTON_ID, title: "Cash livraison" } },
+            { type: "reply", reply: { id: PAYMENT_MOMO_LIVRAISON_BUTTON_ID, title: "Momo livraison" } },
+            { type: "reply", reply: { id: PAYMENT_MOMO_AVANCE_BUTTON_ID, title: "Momo avance" } },
+          ],
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
 }
 
 /** Envoie le WhatsApp Flow de commande CHIVI. flowToken identifie la session (panier) côté data endpoint. Serveur uniquement. */

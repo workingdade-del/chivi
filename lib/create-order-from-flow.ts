@@ -1,6 +1,13 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendWhatsappText, buildOrderConfirmationMessage, extractMessageId } from "@/lib/whatsapp";
 import { sendAdminOrderNotification } from "@/lib/email";
+import type { PaymentMethod } from "@/lib/supabase/types";
+
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  cash_livraison: "Cash à la livraison",
+  momo_livraison: "Mobile Money à la livraison",
+  momo_avance: "Mobile Money en avance",
+};
 
 export interface FlowCartLine {
   productId: string;
@@ -21,9 +28,9 @@ export interface FlowCartState {
 /**
  * Finalise une commande passée via le WhatsApp Flow — le panier est déjà
  * entièrement pricé côté serveur (data endpoint), donc pas besoin de
- * recalculer les prix comme dans /api/orders. Le Flow n'a pas d'écran de
- * paiement (hors périmètre des 6 écrans demandés) : commande en espèces à
- * la livraison par défaut, comme le reste du système.
+ * recalculer les prix comme dans /api/orders. Le mode de paiement est
+ * demandé en chat classique après validation du récapitulatif (le Flow n'a
+ * pas d'écran de paiement).
  */
 export async function createOrderFromFlowCart(params: {
   phone: string;
@@ -33,6 +40,7 @@ export async function createOrderFromFlowCart(params: {
   deliveryLat: number;
   deliveryLng: number;
   deliveryFee: number;
+  paymentMethod: PaymentMethod;
 }): Promise<{ orderId: string; orderNumber: string; total: number } | null> {
   if (!params.cart.lines.length) {
     console.warn("[create-order-from-flow] empty cart, nothing to create", { phone: params.phone });
@@ -47,7 +55,7 @@ export async function createOrderFromFlowCart(params: {
     .from("orders")
     .insert({
       profile_id: params.profileId,
-      payment_method: "cash_livraison",
+      payment_method: params.paymentMethod,
       subtotal,
       delivery_fee: params.deliveryFee,
       total,
@@ -100,7 +108,7 @@ export async function createOrderFromFlowCart(params: {
         orderNumber: order.order_number,
         total,
         itemsSummary,
-        paymentLabel: "Cash à la livraison",
+        paymentLabel: PAYMENT_LABELS[params.paymentMethod],
       })
     );
     await supabase.from("whatsapp_messages").insert({
