@@ -33,6 +33,12 @@ import {
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
 export const dynamic = "force-dynamic";
+// Le traitement d'un message (résolution + téléchargement média Meta,
+// upload Storage, transcription Groq) enchaîne plusieurs appels réseau
+// séquentiels qui peuvent dépasser la limite par défaut de la fonction —
+// un média/transcription silencieusement absent en base a été observé en
+// prod, cohérent avec un timeout coupant l'exécution en cours de route.
+export const maxDuration = 30;
 
 /** Handshake de vérification exigé par Meta lors de la config du webhook. */
 export async function GET(req: NextRequest) {
@@ -576,10 +582,28 @@ export async function POST(req: NextRequest) {
             const { buffer, mimeType } = await downloadWhatsappMedia(mediaRef.id);
             mediaMimeType = mediaRef.mime_type ?? mimeType;
             mediaPath = await uploadWhatsappMedia(supabase, buffer, mediaMimeType, phone);
+            console.log("[whatsapp-webhook] média entrant stocké", {
+              waMessageId: message.id,
+              type: message.type,
+              mediaPath,
+              mediaMimeType,
+              bytes: buffer.length,
+            });
 
+            // La transcription est isolée dans son propre try/catch : un
+            // échec Groq (rate limit, timeout) ne doit jamais faire perdre
+            // le média déjà téléchargé et stocké — le vocal doit rester
+            // jouable même sans texte.
             if (message.type === "audio") {
-              messageContent = await transcribeAudio(buffer, mediaMimeType);
-              console.log("[whatsapp-webhook] audio transcribed", { waMessageId: message.id, transcript: messageContent });
+              try {
+                messageContent = await transcribeAudio(buffer, mediaMimeType);
+                console.log("[whatsapp-webhook] audio transcribed", { waMessageId: message.id, transcript: messageContent });
+              } catch (transcribeErr) {
+                console.error("[whatsapp-webhook] audio transcription FAILED (média conservé)", {
+                  waMessageId: message.id,
+                  error: transcribeErr,
+                });
+              }
             } else {
               messageContent =
                 (mediaRef as { caption?: string }).caption ??

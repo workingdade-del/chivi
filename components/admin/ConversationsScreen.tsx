@@ -452,8 +452,21 @@ export function ConversationsScreen() {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={url} alt="Image envoyée" className="rounded-xl max-w-full max-h-72 mb-1.5 object-contain" />
                       )}
-                      {m.message_type === "audio" && url && (
-                        <audio controls src={url} className="max-w-full mb-1" />
+                      {m.message_type === "audio" && (
+                        <>
+                          {url ? (
+                            <audio controls src={url} className="max-w-full mb-1" />
+                          ) : (
+                            <div className={`text-xs italic mb-1 ${m.direction === "outbound" ? "text-cream/70" : "text-[#b0a596]"}`}>
+                              Audio indisponible
+                            </div>
+                          )}
+                          {m.content && (
+                            <div className={`text-xs italic mt-0.5 ${m.direction === "outbound" ? "text-cream/70" : "text-[#9a8b78]"}`}>
+                              Transcription automatique : {m.content}
+                            </div>
+                          )}
+                        </>
                       )}
                       {m.message_type === "document" && url && (
                         <a
@@ -465,7 +478,9 @@ export function ConversationsScreen() {
                           <FileText size={16} /> {m.content || "Document"} <Download size={13} />
                         </a>
                       )}
-                      {m.content && m.message_type !== "document" && <div className="whitespace-pre-wrap">{m.content}</div>}
+                      {m.content && m.message_type !== "document" && m.message_type !== "audio" && (
+                        <div className="whitespace-pre-wrap">{m.content}</div>
+                      )}
                       <div className={`text-[10.5px] mt-1 ${m.direction === "outbound" ? "text-cream/70" : "text-[#9a8b78]"}`}>
                         {timeLabel(m.created_at)}
                       </div>
