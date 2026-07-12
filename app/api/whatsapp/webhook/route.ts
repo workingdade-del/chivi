@@ -230,13 +230,30 @@ async function handleFlowTrigger(profileId: string | null, phone: string) {
   console.log("[whatsapp-webhook] transition -> cart (nouvelle session Flow)", { flowToken: session.flow_token, phone });
 
   try {
-    await sendWhatsappText(phone, buildFlowWelcomeMessage());
+    const welcomeMessage = buildFlowWelcomeMessage();
+    const sendResult = await sendWhatsappText(phone, welcomeMessage);
+    await supabase.from("whatsapp_messages").insert({
+      profile_id: profileId,
+      wa_message_id: extractMessageId(sendResult),
+      direction: "outbound",
+      phone,
+      message_type: "text",
+      content: welcomeMessage,
+    });
   } catch (err) {
     console.error("[whatsapp-webhook] failed to send flow welcome message", err);
   }
 
   try {
-    await sendWhatsappFlow(phone, session.flow_token);
+    const sendResult = await sendWhatsappFlow(phone, session.flow_token);
+    await supabase.from("whatsapp_messages").insert({
+      profile_id: profileId,
+      wa_message_id: extractMessageId(sendResult),
+      direction: "outbound",
+      phone,
+      message_type: "interactive",
+      content: "WhatsApp Flow — commande in-app",
+    });
   } catch (err) {
     console.error("[whatsapp-webhook] failed to send WhatsApp Flow", err);
   }

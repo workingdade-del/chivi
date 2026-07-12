@@ -365,12 +365,19 @@ export async function sendWhatsappFlow(to: string, flowToken: string) {
     }),
   });
 
+  // Un Flow non publié (status DRAFT côté Meta) est rejeté silencieusement
+  // du point de vue du client — l'appel échoue avec un code Graph API
+  // explicite mais rien n'est jamais envoyé, et sans ce log complet
+  // l'échec n'était visible nulle part (pas de ligne whatsapp_messages,
+  // pas de détail d'erreur).
+  const rawBody = await res.text();
+  console.log("[whatsapp-flow] réponse Meta à l'envoi du Flow", { to: normalizePhone(to), flowId, flowToken, status: res.status, body: rawBody });
+
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+    throw new Error(`WhatsApp send failed (${res.status}): ${rawBody}`);
   }
 
-  return res.json();
+  return JSON.parse(rawBody);
 }
 
 export const DELIVERY_DONE_BUTTON_PREFIX = "delivery_done:";
