@@ -55,7 +55,13 @@ export async function POST(req: NextRequest) {
       await deleteStoredMedia(supabase, mediaPath);
       finalMediaPath = convertedPath;
       finalMimeType = OGG_OPUS_MIME_TYPE;
-      console.log("[send-media] audio converti vers ogg/opus", { from: mediaPath, to: convertedPath, originalMimeType: mimeType });
+      console.log("[send-media] audio converti vers ogg/opus", {
+        from: mediaPath,
+        to: convertedPath,
+        originalMimeType: mimeType,
+        rawBytes: rawBuffer.length,
+        convertedBytes: converted.length,
+      });
     } catch (err) {
       return NextResponse.json(
         { error: err instanceof Error ? `Échec de conversion audio: ${err.message}` : "Échec de conversion audio" },
