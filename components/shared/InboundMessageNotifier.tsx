@@ -29,17 +29,40 @@ function previewOf(messageType: string, content: string | null): string {
  * permission accordée.
  */
 async function showBrowserNotification(title: string, body: string) {
-  if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "granted") return;
+  if (typeof window === "undefined" || !("Notification" in window)) {
+    console.log("[notifier] Notification API absente de ce navigateur — abandon");
+    return;
+  }
+
+  console.log("[notifier] Notification.permission au moment de l'appel =", Notification.permission);
+  if (Notification.permission !== "granted") {
+    console.log("[notifier] permission non accordée, notification système non envoyée");
+    return;
+  }
 
   if ("serviceWorker" in navigator) {
     const registration = await navigator.serviceWorker.getRegistration();
+    console.log("[notifier] service worker registration =", registration ? { scope: registration.scope, active: Boolean(registration.active), installing: Boolean(registration.installing), waiting: Boolean(registration.waiting) } : null);
+
     if (registration) {
-      await registration.showNotification(title, { body, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png" });
-      return;
+      try {
+        console.log("[notifier] appel registration.showNotification()", { title, body });
+        await registration.showNotification(title, { body, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png" });
+        console.log("[notifier] registration.showNotification() résolu sans erreur");
+        return;
+      } catch (err) {
+        console.error("[notifier] registration.showNotification() a levé une erreur — repli sur new Notification()", err);
+      }
     }
   }
 
-  new Notification(title, { body, icon: "/icons/icon-192.png" });
+  try {
+    console.log("[notifier] appel new Notification()", { title, body });
+    const n = new Notification(title, { body, icon: "/icons/icon-192.png" });
+    console.log("[notifier] new Notification() construit sans erreur", n);
+  } catch (err) {
+    console.error("[notifier] new Notification() a levé une erreur", err);
+  }
 }
 
 /**
