@@ -35,7 +35,14 @@ import {
   getPendingConfirmationId,
   getAwaitingLocationFlowToken,
 } from "@/lib/location-confirmation";
-import { handleOrderValidationReply, handlePaymentMethodReply } from "@/lib/order-validation";
+import {
+  handleOrderValidationReply,
+  handlePaymentMethodReply,
+  getActiveFlowSession,
+  cancelActiveFlowSessions,
+  handleFlowRestart,
+  handleUnexpectedFlowMessage,
+} from "@/lib/order-validation";
 
 // Le handshake GET lit des query params et le POST doit toujours
 // s'exécuter (jamais de cache statique) pour un webhook.
@@ -216,6 +223,14 @@ function isFlowTrigger(text: string): boolean {
 /** Crée une session panier (flow_sessions), accueille chaleureusement le client, puis envoie le Flow. Ne doit jamais faire échouer le webhook. */
 async function handleFlowTrigger(profileId: string | null, phone: string) {
   const supabase = createServiceClient();
+
+  // Empêche les sessions Flow orphelines : si le client redéclenche "menu"
+  // avant d'avoir terminé une commande précédente, l'ancienne session est
+  // annulée proprement plutôt que de laisser deux sessions actives
+  // coexister — cause racine identifiée des paniers/quantités incohérents
+  // (les lookups "session la plus récente" devenaient ambigus).
+  await cancelActiveFlowSessions(phone);
+
   const { data: session, error } = await supabase
     .from("flow_sessions")
     .insert({ profile_id: profileId, phone, cart: { lines: [], currentCategory: null } })
@@ -709,6 +724,15 @@ export async function POST(req: NextRequest) {
           !pendingConfirmationId && (message.type === "text" || message.type === "location")
             ? await getAwaitingLocationFlowToken(phone)
             : null;
+        // Session Flow active à N'IMPORTE QUELLE étape (pas seulement
+        // awaiting_location) — garde-fou universel : tant qu'une commande
+        // est en cours, un texte/audio ne doit jamais pouvoir s'échapper
+        // vers la conversation IA générique (bug critique corrigé ici).
+        const activeFlowSession =
+          messageContent && (message.type === "text" || message.type === "audio")
+            ? await getActiveFlowSession(phone)
+            : null;
+        const isRestartRequest = Boolean(activeFlowSession) && messageContent?.trim().toLowerCase() === "recommencer";
 
         if (isPaused) {
           console.log("[whatsapp-webhook] system is paused, sending pause auto-reply", { profileId: profile?.id });
@@ -726,6 +750,9 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error("[whatsapp-webhook] pause auto-reply FAILED", err);
           }
+        } else if (isRestartRequest) {
+          console.log("[whatsapp-webhook] client demande RECOMMENCER, reset de la session Flow", { profileId: profile?.id });
+          await handleFlowRestart(phone, profile?.id ?? null);
         } else if (pendingConfirmationId && messageContent) {
           console.log("[whatsapp-webhook] customer replying to a pending location confirmation", { profileId: profile?.id });
           await handleLocationTextReply(pendingConfirmationId, phone, messageContent);
@@ -760,6 +787,12 @@ export async function POST(req: NextRequest) {
         } else if (awaitingLocationFlowToken && messageContent && (message.type === "text" || message.type === "audio")) {
           console.log("[whatsapp-webhook] customer replying with delivery location after Flow checkout", { profileId: profile?.id });
           await handleTextLocation(profile?.id ?? null, phone, messageContent, awaitingLocationFlowToken);
+        } else if (activeFlowSession && messageContent) {
+          console.log("[whatsapp-webhook] message texte inattendu pendant un flow actif, interception avant fuite vers l'IA", {
+            profileId: profile?.id,
+            status: activeFlowSession.status,
+          });
+          await handleUnexpectedFlowMessage(phone, messageContent, activeFlowSession.status);
         } else if (messageContent && message.type === "text" && isFlowTrigger(messageContent)) {
           console.log("[whatsapp-webhook] flow trigger keyword detected, sending WhatsApp Flow", { profileId: profile?.id });
           await handleFlowTrigger(profile?.id ?? null, phone);

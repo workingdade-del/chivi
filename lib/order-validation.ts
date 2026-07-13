@@ -6,6 +6,7 @@ import {
   sendPaymentMethodButtons,
   buildOrderRecapMessage,
   buildOrderCancelledByCustomerMessage,
+  extractMessageId,
   ORDER_VALIDATE_BUTTON_ID,
   ORDER_CANCEL_BUTTON_ID,
   PAYMENT_CASH_BUTTON_ID,
@@ -13,6 +14,141 @@ import {
   PAYMENT_MOMO_AVANCE_BUTTON_ID,
 } from "@/lib/whatsapp";
 import type { PaymentMethod } from "@/lib/supabase/types";
+
+/**
+ * Statuts "actifs" d'une session Flow — tant qu'une commande y est, TOUS
+ * les messages du client doivent être traités par la logique du flow
+ * structuré, jamais par la conversation IA générique (bug critique
+ * corrigé ici : un texte libre à l'étape awaiting_validation/awaiting_payment
+ * ne matchait aucune branche du webhook et fuyait vers handleAiReply, qui
+ * perdait tout le contexte de commande).
+ */
+export type ActiveFlowStatus = "cart" | "awaiting_location" | "awaiting_validation" | "awaiting_payment";
+const ACTIVE_STATUSES: ActiveFlowStatus[] = ["cart", "awaiting_location", "awaiting_validation", "awaiting_payment"];
+
+/** Session Flow active (non terminale) pour ce numéro, quelle que soit l'étape — utilisé pour garantir qu'aucun message ne peut s'échapper du flow structuré. */
+export async function getActiveFlowSession(phone: string): Promise<{ flowToken: string; status: ActiveFlowStatus } | null> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("flow_sessions")
+    .select("flow_token, status")
+    .eq("phone", phone)
+    .in("status", ACTIVE_STATUSES)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return { flowToken: data.flow_token, status: data.status as ActiveFlowStatus };
+}
+
+/**
+ * Annule toute session Flow active pour ce numéro. Appelé avant de créer
+ * une nouvelle session (évite les sessions orphelines quand le client
+ * redéclenche "menu" sans avoir terminé — cause probable des paniers/
+ * quantités incohérents observés : plusieurs sessions actives simultanées
+ * rendaient ambigu "la session la plus récente" utilisée par les lookups)
+ * et par la commande "RECOMMENCER".
+ */
+export async function cancelActiveFlowSessions(phone: string): Promise<void> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("flow_sessions")
+    .update({ status: "cancelled" })
+    .eq("phone", phone)
+    .in("status", ACTIVE_STATUSES)
+    .select("flow_token");
+  if (data?.length) {
+    console.log("[order-validation] sessions annulées", { phone, flowTokens: data.map((s) => s.flow_token) });
+  }
+}
+
+function isConfirmationText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return normalized === "oui" || normalized === "ok" || normalized.startsWith("oui ");
+}
+
+function isCancellationText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return normalized === "non" || normalized.startsWith("annul");
+}
+
+/** Le client demande explicitement à repartir de zéro — garde-fou universel, quelle que soit l'étape où le flow est bloqué. */
+export async function handleFlowRestart(phone: string, profileId: string | null): Promise<void> {
+  await cancelActiveFlowSessions(phone);
+  const message = "D'accord, on reprend à zéro ! 😊 Écris \"menu\" quand tu es prêt à recommencer ta commande.";
+  try {
+    const sendResult = await sendWhatsappText(phone, message);
+    const supabase = createServiceClient();
+    await supabase.from("whatsapp_messages").insert({
+      profile_id: profileId,
+      wa_message_id: extractMessageId(sendResult),
+      direction: "outbound",
+      phone,
+      message_type: "text",
+      content: message,
+    });
+  } catch (err) {
+    console.error("[order-validation] failed to send restart confirmation", err);
+  }
+}
+
+/**
+ * Le client envoie un texte libre (pas un clic bouton) alors qu'une session
+ * Flow est active — au lieu de laisser fuiter vers l'IA générique (bug
+ * critique), on interprète OUI/NON comme équivalents boutons quand c'est
+ * sans ambiguïté, et sinon on guide clairement plutôt que de dériver vers
+ * une correction en langage libre (trop fragile, cause racine de la
+ * confusion observée : localisation redemandée, distance incohérente).
+ */
+export async function handleUnexpectedFlowMessage(phone: string, text: string, status: ActiveFlowStatus): Promise<void> {
+  console.log("[order-validation] message texte inattendu pendant un flow actif", { phone, status, text });
+
+  if (status === "awaiting_validation") {
+    if (isConfirmationText(text)) {
+      await handleOrderValidationReply(phone, ORDER_VALIDATE_BUTTON_ID);
+      return;
+    }
+    if (isCancellationText(text)) {
+      await handleOrderValidationReply(phone, ORDER_CANCEL_BUTTON_ID);
+      return;
+    }
+    await sendGuardrailMessage(
+      phone,
+      "Je ne peux pas modifier la commande en texte libre à cette étape. 🙏 Réponds OUI pour valider le récapitulatif tel quel, NON pour l'annuler, ou RECOMMENCER pour tout reprendre à zéro."
+    );
+    return;
+  }
+
+  if (status === "awaiting_payment") {
+    await sendGuardrailMessage(
+      phone,
+      "Merci d'utiliser les boutons ci-dessus 👆 pour choisir ton mode de paiement, ou réponds RECOMMENCER pour repartir de zéro."
+    );
+    return;
+  }
+
+  // status === "cart" : le Flow menu est censé être ouvert côté client.
+  await sendGuardrailMessage(
+    phone,
+    "Ta commande est encore ouverte dans le Flow menu ci-dessus. 📋 Termine-la là-bas, ou réponds RECOMMENCER pour repartir de zéro."
+  );
+}
+
+async function sendGuardrailMessage(phone: string, message: string): Promise<void> {
+  try {
+    const sendResult = await sendWhatsappText(phone, message);
+    const supabase = createServiceClient();
+    await supabase.from("whatsapp_messages").insert({
+      wa_message_id: extractMessageId(sendResult),
+      direction: "outbound",
+      phone,
+      message_type: "text",
+      content: message,
+    });
+  } catch (err) {
+    console.error("[order-validation] failed to send guardrail message", err);
+  }
+}
 
 /** Une session Flow attend-elle la validation du récapitulatif (boutons Valider/Annuler) ? */
 export async function getAwaitingValidationFlowToken(phone: string): Promise<string | null> {
