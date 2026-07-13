@@ -58,6 +58,7 @@ async function handleAction(payload: {
 
   if (payload.action === "INIT") {
     const categories = Object.entries(CATEGORY_LABELS).map(([id, title]) => ({ id, title }));
+    console.log("[flow-data] réponse INIT", { flowToken, categoriesCount: categories.length });
     return { screen: "CATEGORIES", data: { categories } };
   }
 
@@ -193,6 +194,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { payload, aesKey, iv } = decrypted;
+  console.log("[flow-data] requête reçue", { action: payload.action, screen: payload.screen, flowToken: payload.flow_token, trigger: payload.data?.trigger });
 
   if (payload.action === "ping") {
     const encrypted = encryptFlowResponse({ version: payload.version, data: { status: "active" } }, aesKey, iv);

@@ -1,3 +1,5 @@
+import { CATEGORY_LABELS } from "@/lib/product-categories";
+
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
 
 export interface WhatsappSendResponse {
@@ -358,7 +360,19 @@ export async function sendWhatsappFlow(to: string, flowToken: string) {
             flow_id: flowId,
             flow_cta: "Commander",
             flow_action: "navigate",
-            flow_action_payload: { screen: "CATEGORIES" },
+            // Les catégories sont fournies directement ici plutôt que de
+            // dépendre uniquement de l'appel INIT au data endpoint : un
+            // flow_action_payload avec `screen` mais sans `data` est un cas
+            // ambigu côté Meta — observé en réel avec la liste vide sous
+            // "Choisis une catégorie" alors que l'endpoint répond
+            // correctement quand on le teste directement. Comme les
+            // catégories sont statiques (aucune dépendance BDD), les fournir
+            // ici garantit le premier rendu quel que soit le comportement
+            // exact de Meta vis-à-vis de INIT.
+            flow_action_payload: {
+              screen: "CATEGORIES",
+              data: { categories: Object.entries(CATEGORY_LABELS).map(([id, title]) => ({ id, title })) },
+            },
           },
         },
       },
