@@ -113,6 +113,7 @@ export interface Database {
           delivery_lng: number | null;
           delivery_zone_id: string | null;
           client_note: string | null;
+          location_inputs: unknown;
           created_at: string;
           updated_at: string;
         },
@@ -288,6 +289,7 @@ export interface Database {
           delivery_fee: number | null;
           status: "cart" | "awaiting_location" | "awaiting_validation" | "awaiting_payment" | "completed" | "cancelled" | "escalated";
           location_attempts: number;
+          location_inputs: unknown;
           created_at: string;
           updated_at: string;
         },

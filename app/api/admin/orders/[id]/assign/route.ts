@@ -1,12 +1,81 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerAuthClient, createServiceClient } from "@/lib/supabase/server";
-import { sendDriverDeliveryAssignment, extractMessageId } from "@/lib/whatsapp";
+import {
+  sendDriverDeliveryAssignment,
+  sendWhatsappLocation,
+  sendWhatsappText,
+  sendWhatsappMedia,
+  buildDriverContactReminderMessage,
+  extractMessageId,
+  normalizePhone,
+} from "@/lib/whatsapp";
+import { getSignedMediaUrl } from "@/lib/whatsapp-media";
+import type { RawLocationInput } from "@/lib/location-confirmation";
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash_livraison: "Cash à la livraison",
   momo_livraison: "Mobile Money à la livraison",
   momo_avance: "Mobile Money déjà payé",
 };
+
+/**
+ * Retransmet un par un, dans l'ordre d'envoi, chaque élément brut de
+ * localisation reçu du client (GPS/texte/audio) — jamais juste l'adresse
+ * interprétée par l'IA, l'adressage au Bénin étant souvent imprécis.
+ * L'audio est retransmis tel quel (pas la transcription) via une nouvelle
+ * URL signée, le fichier original stocké restant privé.
+ */
+async function forwardLocationInputsToDriver(
+  supabase: ReturnType<typeof createServiceClient>,
+  driverPhone: string,
+  driverId: string,
+  orderId: string,
+  locationInputs: RawLocationInput[]
+) {
+  for (const input of locationInputs) {
+    try {
+      if (input.type === "gps" && input.lat !== undefined && input.lng !== undefined) {
+        const sendResult = await sendWhatsappLocation(driverPhone, input.lat, input.lng);
+        await supabase.from("whatsapp_messages").insert({
+          driver_id: driverId,
+          order_id: orderId,
+          wa_message_id: extractMessageId(sendResult),
+          direction: "outbound",
+          phone: driverPhone,
+          message_type: "location",
+          content: "Position brute du client (transférée)",
+        });
+      } else if (input.type === "text" && input.content) {
+        const sendResult = await sendWhatsappText(driverPhone, `📍 Position décrite par le client : "${input.content}"`);
+        await supabase.from("whatsapp_messages").insert({
+          driver_id: driverId,
+          order_id: orderId,
+          wa_message_id: extractMessageId(sendResult),
+          direction: "outbound",
+          phone: driverPhone,
+          message_type: "text",
+          content: input.content,
+        });
+      } else if (input.type === "audio" && input.mediaPath) {
+        const signedUrl = await getSignedMediaUrl(supabase, input.mediaPath);
+        if (!signedUrl) continue;
+        const sendResult = await sendWhatsappMedia({ to: driverPhone, mediaType: "audio", link: signedUrl });
+        await supabase.from("whatsapp_messages").insert({
+          driver_id: driverId,
+          order_id: orderId,
+          wa_message_id: extractMessageId(sendResult),
+          direction: "outbound",
+          phone: driverPhone,
+          message_type: "audio",
+          content: "Message vocal du client (position, transféré)",
+          media_path: input.mediaPath,
+        });
+      }
+    } catch (err) {
+      console.error("[assign-order] échec transfert d'un élément de localisation brut au livreur", { orderId, inputType: input.type, error: err });
+    }
+  }
+}
 
 /** Assigne un livreur à une commande et l'informe par WhatsApp (adresse, montant, bouton "Client livré"). Staff uniquement. */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -29,7 +98,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: orderData, error: orderError } = await supabase
     .from("orders")
-    .select("id, order_number, status, total, payment_method, delivery_address, order_assignments(id, driver_id)")
+    .select("id, order_number, status, total, payment_method, delivery_address, profile_id, location_inputs, order_assignments(id, driver_id)")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -40,6 +109,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     total: number;
     payment_method: string;
     delivery_address: string | null;
+    profile_id: string | null;
+    location_inputs: RawLocationInput[] | null;
     order_assignments: { id: string; driver_id: string }[];
   } | null;
 
@@ -80,13 +151,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   await supabase.from("orders").update({ status: "en_route" }).eq("id", orderId);
   await supabase.from("drivers").update({ status: "en_course" }).eq("id", driver.id);
 
+  let customerProfile: { full_name: string | null; whatsapp_phone: string } | null = null;
+  if (order.profile_id) {
+    const { data } = await supabase.from("profiles").select("full_name, whatsapp_phone").eq("id", order.profile_id).maybeSingle();
+    customerProfile = data;
+  }
+  const clientLabel = customerProfile?.full_name || customerProfile?.whatsapp_phone || "Client";
+
   try {
     const sendResult = await sendDriverDeliveryAssignment({
       to: driver.phone,
-      driverName: driver.name,
       orderNumber: order.order_number,
       orderId: order.id,
-      address: order.delivery_address ?? "Adresse non précisée",
+      clientLabel,
       amountToCollect: order.payment_method === "momo_avance" ? 0 : order.total,
       paymentLabel: PAYMENT_LABELS[order.payment_method] ?? order.payment_method,
     });
@@ -99,6 +176,40 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       message_type: "interactive",
       content: `Course assignée ${order.order_number}`,
     });
+
+    const locationInputs = order.location_inputs ?? [];
+    if (locationInputs.length) {
+      await forwardLocationInputsToDriver(supabase, driver.phone, driver.id, order.id, locationInputs);
+    } else if (order.delivery_address) {
+      // Repli pour les commandes sans historique brut (ex : créées avant ce
+      // système, ou hors Flow) — au moins l'adresse interprétée est envoyée.
+      const fallbackResult = await sendWhatsappText(driver.phone, `📍 Adresse : ${order.delivery_address}`);
+      await supabase.from("whatsapp_messages").insert({
+        driver_id: driver.id,
+        order_id: order.id,
+        wa_message_id: extractMessageId(fallbackResult),
+        direction: "outbound",
+        phone: driver.phone,
+        message_type: "text",
+        content: order.delivery_address,
+      });
+    }
+
+    if (customerProfile?.whatsapp_phone) {
+      const reminderResult = await sendWhatsappText(
+        driver.phone,
+        buildDriverContactReminderMessage(`+${normalizePhone(customerProfile.whatsapp_phone)}`)
+      );
+      await supabase.from("whatsapp_messages").insert({
+        driver_id: driver.id,
+        order_id: order.id,
+        wa_message_id: extractMessageId(reminderResult),
+        direction: "outbound",
+        phone: driver.phone,
+        message_type: "text",
+        content: "Rappel contact direct client",
+      });
+    }
   } catch (err) {
     console.error("[assign-order] échec envoi WhatsApp livreur", { orderId, error: err });
   }

@@ -9,6 +9,8 @@ import {
   PAYMENT_CASH_BUTTON_ID,
   PAYMENT_MOMO_LIVRAISON_BUTTON_ID,
   PAYMENT_MOMO_AVANCE_BUTTON_ID,
+  LOCATION_CONFIRM_BUTTON_ID,
+  LOCATION_REJECT_BUTTON_ID,
   buildPauseAutoReply,
   buildPostDeliveryFeedbackMessage,
   buildDeliveryFeeConfirmedMessage,
@@ -32,6 +34,8 @@ import {
   handleGpsLocation,
   handleTextLocation,
   handleLocationTextReply,
+  handleLocationConfirmButtonReply,
+  handleLocationRejectButtonReply,
   getPendingConfirmationId,
   getAwaitingLocationFlowToken,
 } from "@/lib/location-confirmation";
@@ -755,13 +759,34 @@ export async function POST(req: NextRequest) {
           await handleFlowRestart(phone, profile?.id ?? null);
         } else if (pendingConfirmationId && messageContent) {
           console.log("[whatsapp-webhook] customer replying to a pending location confirmation", { profileId: profile?.id });
-          await handleLocationTextReply(pendingConfirmationId, phone, messageContent);
+          await handleLocationTextReply(pendingConfirmationId, phone, messageContent, message.id);
         } else if (message.type === "location" && message.location) {
           console.log("[whatsapp-webhook] customer shared location, requesting confirmation", { profileId: profile?.id });
-          await handleGpsLocation(profile?.id ?? null, phone, message.location.latitude, message.location.longitude, awaitingLocationFlowToken);
+          await handleGpsLocation(
+            profile?.id ?? null,
+            phone,
+            message.location.latitude,
+            message.location.longitude,
+            awaitingLocationFlowToken,
+            message.id
+          );
         } else if (message.type === "interactive" && message.interactive?.type === "nfm_reply" && message.interactive.nfm_reply) {
           console.log("[whatsapp-webhook] WhatsApp Flow completed", { profileId: profile?.id });
           await handleFlowCompletion(phone, message.interactive.nfm_reply);
+        } else if (
+          message.type === "interactive" &&
+          message.interactive?.type === "button_reply" &&
+          (message.interactive.button_reply?.id === LOCATION_CONFIRM_BUTTON_ID || message.interactive.button_reply?.id === LOCATION_REJECT_BUTTON_ID)
+        ) {
+          console.log("[whatsapp-webhook] customer replying to location confirmation buttons", {
+            profileId: profile?.id,
+            buttonId: message.interactive.button_reply?.id,
+          });
+          if (message.interactive.button_reply!.id === LOCATION_CONFIRM_BUTTON_ID) {
+            await handleLocationConfirmButtonReply(phone);
+          } else {
+            await handleLocationRejectButtonReply(phone);
+          }
         } else if (
           message.type === "interactive" &&
           message.interactive?.type === "button_reply" &&
@@ -786,7 +811,12 @@ export async function POST(req: NextRequest) {
           await handlePaymentMethodReply(phone, message.interactive.button_reply!.id);
         } else if (awaitingLocationFlowToken && messageContent && (message.type === "text" || message.type === "audio")) {
           console.log("[whatsapp-webhook] customer replying with delivery location after Flow checkout", { profileId: profile?.id });
-          await handleTextLocation(profile?.id ?? null, phone, messageContent, awaitingLocationFlowToken);
+          await handleTextLocation(profile?.id ?? null, phone, messageContent, awaitingLocationFlowToken, {
+            type: message.type === "audio" ? "audio" : "text",
+            waMessageId: message.id,
+            mediaPath,
+            mediaMimeType,
+          });
         } else if (activeFlowSession && messageContent) {
           console.log("[whatsapp-webhook] message texte inattendu pendant un flow actif, interception avant fuite vers l'IA", {
             profileId: profile?.id,

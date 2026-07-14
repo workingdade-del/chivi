@@ -205,7 +205,47 @@ export async function sendWhatsappAvailabilityRequest(to: string, driverName: st
 }
 
 export function buildLocationConfirmationMessage(address: string): string {
-  return `📍 J'ai trouvé : ${address}.\nC'est bien ça ? Répondez OUI pour confirmer ou décrivez plus précisément.`;
+  return `📍 J'ai trouvé : ${address}.\nC'est bien ça ?`;
+}
+
+export const LOCATION_CONFIRM_BUTTON_ID = "location_confirm";
+export const LOCATION_REJECT_BUTTON_ID = "location_reject";
+
+/** Boutons "✅ Oui c'est ça" / "❌ Non, je précise" pour confirmer l'adresse détectée (GPS ou texte). Le texte libre "OUI"/"NON" reste accepté en repli, voir handleLocationTextReply. */
+export async function sendLocationConfirmationButtons(to: string, address: string) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: buildLocationConfirmationMessage(address) },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: LOCATION_CONFIRM_BUTTON_ID, title: "✅ Oui c'est ça" } },
+            { type: "reply", reply: { id: LOCATION_REJECT_BUTTON_ID, title: "❌ Non, je précise" } },
+          ],
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
+export function buildLocationRejectionPromptMessage(): string {
+  return "D'accord 🙏 Décris-moi plus précisément l'endroit (texte ou message vocal), ou envoie directement ta position (📎 → Localisation).";
 }
 
 export function buildLocationNotFoundMessage(): string {
@@ -396,13 +436,19 @@ export async function sendWhatsappFlow(to: string, flowToken: string) {
 
 export const DELIVERY_DONE_BUTTON_PREFIX = "delivery_done:";
 
-/** Message livreur à l'assignation : adresse + montant à collecter + bouton "Client livré". Serveur uniquement. */
+/**
+ * Message livreur à l'assignation : en-tête (commande, client, montant) +
+ * bouton "Client livré". Les données de localisation brutes du client (GPS,
+ * texte, audio) sont envoyées séparément juste après, un par un, dans
+ * l'ordre où le client les a envoyées — voir la route d'assignation qui
+ * boucle sur order.location_inputs et appelle sendWhatsappLocation /
+ * sendWhatsappText / sendWhatsappMedia selon le type. Serveur uniquement.
+ */
 export async function sendDriverDeliveryAssignment(params: {
   to: string;
-  driverName: string;
   orderNumber: string;
   orderId: string;
-  address: string;
+  clientLabel: string;
   amountToCollect: number;
   paymentLabel: string;
 }) {
@@ -420,10 +466,10 @@ export async function sendDriverDeliveryAssignment(params: {
         type: "button",
         body: {
           text: [
-            `Nouvelle course ${params.orderNumber}, ${params.driverName} 🛵`,
-            "",
-            `📍 Adresse : ${params.address}`,
-            `💰 À collecter : ${params.amountToCollect.toLocaleString("fr-FR")} FCFA (${params.paymentLabel})`,
+            `📦 Nouvelle course - Commande ${params.orderNumber}`,
+            `Client : ${params.clientLabel}`,
+            `Montant à collecter : ${params.amountToCollect.toLocaleString("fr-FR")} FCFA (${params.paymentLabel})`,
+            "Voici les informations de localisation du client :",
           ].join("\n"),
         },
         action: {
@@ -444,6 +490,34 @@ export async function sendDriverDeliveryAssignment(params: {
   }
 
   return res.json();
+}
+
+/** Retransmet un pin de localisation exact (GPS brut envoyé par le client) au livreur. Serveur uniquement. */
+export async function sendWhatsappLocation(to: string, lat: number, lng: number) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "location",
+      location: { latitude: lat, longitude: lng },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
+export function buildDriverContactReminderMessage(clientPhoneDisplay: string): string {
+  return `📞 Besoin de précision ? Tu peux contacter directement le client : ${clientPhoneDisplay}\n(l'adressage au Bénin n'est pas toujours exact, n'hésite pas à l'appeler)`;
 }
 
 export function buildPostDeliveryFeedbackMessage(): string {

@@ -41,6 +41,8 @@ export async function createOrderFromFlowCart(params: {
   deliveryLng: number;
   deliveryFee: number;
   paymentMethod: PaymentMethod;
+  /** Éléments bruts (GPS/texte/audio) envoyés par le client pour sa position, dans l'ordre — reportés tels quels sur la commande pour l'assignation livreur. */
+  locationInputs?: unknown;
 }): Promise<{ orderId: string; orderNumber: string; total: number } | null> {
   if (!params.cart.lines.length) {
     console.warn("[create-order-from-flow] empty cart, nothing to create", { phone: params.phone });
@@ -62,6 +64,7 @@ export async function createOrderFromFlowCart(params: {
       delivery_address: params.deliveryAddress,
       delivery_lat: params.deliveryLat,
       delivery_lng: params.deliveryLng,
+      location_inputs: params.locationInputs ?? [],
     })
     .select("id, order_number")
     .single();

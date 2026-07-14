@@ -268,7 +268,7 @@ export async function handlePaymentMethodReply(phone: string, buttonId: string) 
   const supabase = createServiceClient();
   const { data: session } = await supabase
     .from("flow_sessions")
-    .select("profile_id, cart, delivery_address, delivery_lat, delivery_lng, delivery_fee")
+    .select("profile_id, cart, delivery_address, delivery_lat, delivery_lng, delivery_fee, location_inputs")
     .eq("flow_token", flowToken)
     .maybeSingle();
 
@@ -286,6 +286,10 @@ export async function handlePaymentMethodReply(phone: string, buttonId: string) 
     deliveryLng: session.delivery_lng,
     deliveryFee: session.delivery_fee,
     paymentMethod,
+    // Chaque élément brut (GPS, texte, audio) envoyé par le client pendant
+    // la détection de position, dans l'ordre — reporté tel quel sur la
+    // commande pour que l'assignation livreur puisse tout retransmettre.
+    locationInputs: session.location_inputs,
   });
 
   await supabase.from("flow_sessions").update({ status: "completed" }).eq("flow_token", flowToken);

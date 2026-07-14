@@ -7,12 +7,54 @@ import type { FlowCartState } from "@/lib/create-order-from-flow";
 import { sendAdminLocationEscalationNotification } from "@/lib/email";
 import {
   sendWhatsappText,
-  buildLocationConfirmationMessage,
+  sendLocationConfirmationButtons,
   buildLocationNotFoundMessage,
+  buildLocationRejectionPromptMessage,
   buildDeliveryFeeMessage,
   buildOutOfZoneMessage,
   buildLocationEscalationMessage,
 } from "@/lib/whatsapp";
+
+interface PendingConfirmationRow {
+  id: string;
+  candidate_address: string;
+  candidate_lat: number;
+  candidate_lng: number;
+  profile_id: string | null;
+  status: string;
+  flow_token: string | null;
+}
+
+/**
+ * Élément brut envoyé par le client au sujet de sa position, conservé tel
+ * quel (sans filtrage/interprétation) pour pouvoir être retransmis au
+ * livreur à l'assignation — l'adressage au Bénin est souvent imprécis et le
+ * libellé généré par l'IA/Nominatim peut perdre des détails utiles.
+ */
+export interface RawLocationInput {
+  type: "gps" | "text" | "audio";
+  content: string | null;
+  lat?: number;
+  lng?: number;
+  mediaPath?: string | null;
+  mediaMimeType?: string | null;
+  waMessageId: string | null;
+  createdAt: string;
+}
+
+/** Ajoute un élément brut à l'historique de localisation de la session Flow — no-op hors contexte Flow (flowToken null). */
+async function appendLocationInput(flowToken: string | null, input: Omit<RawLocationInput, "createdAt">): Promise<void> {
+  if (!flowToken) return;
+  const supabase = createServiceClient();
+  const { data: session } = await supabase
+    .from("flow_sessions")
+    .select("location_inputs")
+    .eq("flow_token", flowToken)
+    .maybeSingle();
+  const existing = ((session?.location_inputs as unknown as RawLocationInput[]) ?? []) as RawLocationInput[];
+  const updated = [...existing, { ...input, createdAt: new Date().toISOString() }];
+  await supabase.from("flow_sessions").update({ location_inputs: updated as unknown }).eq("flow_token", flowToken);
+}
 
 const GENERIC_GPS_ADDRESS = "Position partagée via GPS";
 const MAX_LOCATION_ATTEMPTS = 3;
@@ -156,7 +198,16 @@ async function applyDeliveryFee(
 }
 
 /** Position GPS partagée nativement sur WhatsApp : reverse-geocode Nominatim + demande de confirmation texte ("OUI"). */
-export async function handleGpsLocation(profileId: string | null, phone: string, lat: number, lng: number, flowToken: string | null = null) {
+export async function handleGpsLocation(
+  profileId: string | null,
+  phone: string,
+  lat: number,
+  lng: number,
+  flowToken: string | null = null,
+  waMessageId: string | null = null
+) {
+  await appendLocationInput(flowToken, { type: "gps", content: null, lat, lng, waMessageId });
+
   if (flowToken) {
     const canProceed = await tryConsumeLocationAttempt(flowToken);
     if (!canProceed) {
@@ -190,14 +241,28 @@ export async function handleGpsLocation(profileId: string | null, phone: string,
   if (!row) return;
 
   try {
-    await sendWhatsappText(phone, buildLocationConfirmationMessage(address));
+    await sendLocationConfirmationButtons(phone, address);
   } catch (err) {
-    console.error("[location-confirmation] failed to send GPS confirmation message", err);
+    console.error("[location-confirmation] failed to send GPS confirmation buttons", err);
   }
 }
 
 /** Description libre (texte ou audio transcrit) : Groq identifie le lieu, Nominatim le recherche, on redemande confirmation ("OUI"). */
-export async function handleTextLocation(profileId: string | null, phone: string, text: string, flowToken: string | null = null) {
+export async function handleTextLocation(
+  profileId: string | null,
+  phone: string,
+  text: string,
+  flowToken: string | null = null,
+  rawInput?: { type: "text" | "audio"; waMessageId: string | null; mediaPath?: string | null; mediaMimeType?: string | null }
+) {
+  await appendLocationInput(flowToken, {
+    type: rawInput?.type ?? "text",
+    content: text,
+    mediaPath: rawInput?.mediaPath ?? null,
+    mediaMimeType: rawInput?.mediaMimeType ?? null,
+    waMessageId: rawInput?.waMessageId ?? null,
+  });
+
   if (flowToken) {
     const canProceed = await tryConsumeLocationAttempt(flowToken);
     if (!canProceed) {
@@ -246,10 +311,35 @@ export async function handleTextLocation(profileId: string | null, phone: string
   if (!row) return;
 
   try {
-    await sendWhatsappText(phone, buildLocationConfirmationMessage(place.address));
+    await sendLocationConfirmationButtons(phone, place.address);
   } catch (err) {
-    console.error("[location-confirmation] failed to send text-location confirmation message", err);
+    console.error("[location-confirmation] failed to send text-location confirmation buttons", err);
   }
+}
+
+async function loadPendingConfirmation(confirmationId: string): Promise<PendingConfirmationRow | null> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("pending_location_confirmations")
+    .select("id, candidate_address, candidate_lat, candidate_lng, profile_id, status, flow_token")
+    .eq("id", confirmationId)
+    .maybeSingle();
+  return data;
+}
+
+async function confirmPendingLocation(row: PendingConfirmationRow, phone: string) {
+  const supabase = createServiceClient();
+  await supabase.from("pending_location_confirmations").update({ status: "confirmed" }).eq("id", row.id);
+
+  if (row.profile_id) {
+    await supabase
+      .from("profiles")
+      .update({ delivery_lat: row.candidate_lat, delivery_lng: row.candidate_lng, address_details: row.candidate_address })
+      .eq("id", row.profile_id);
+  }
+
+  console.log("[location-confirmation] adresse confirmée par le client", { phone, flowToken: row.flow_token });
+  await applyDeliveryFee(phone, row.candidate_lat, row.candidate_lng, row.profile_id, row.flow_token, row.candidate_address);
 }
 
 /**
@@ -257,33 +347,48 @@ export async function handleTextLocation(profileId: string | null, phone: string
  * variante) confirme, tout autre texte est traité comme une description
  * corrigée qui relance la détection (Groq + Nominatim) sur cette nouvelle
  * description — jusqu'à la limite de tentatives (voir tryConsumeLocationAttempt).
+ * Repli conservé pour les clients qui tapent au lieu de cliquer sur les
+ * boutons (voir handleLocationConfirmButtonReply / handleLocationRejectButtonReply).
  */
-export async function handleLocationTextReply(confirmationId: string, phone: string, replyText: string) {
-  const supabase = createServiceClient();
-  const { data: row } = await supabase
-    .from("pending_location_confirmations")
-    .select("id, candidate_address, candidate_lat, candidate_lng, profile_id, status, flow_token")
-    .eq("id", confirmationId)
-    .maybeSingle();
-
+export async function handleLocationTextReply(confirmationId: string, phone: string, replyText: string, waMessageId: string | null = null) {
+  const row = await loadPendingConfirmation(confirmationId);
   if (!row || row.status !== "pending") return;
 
   if (isOuiConfirmation(replyText)) {
-    await supabase.from("pending_location_confirmations").update({ status: "confirmed" }).eq("id", confirmationId);
-
-    if (row.profile_id) {
-      await supabase
-        .from("profiles")
-        .update({ delivery_lat: row.candidate_lat, delivery_lng: row.candidate_lng, address_details: row.candidate_address })
-        .eq("id", row.profile_id);
-    }
-
-    console.log("[location-confirmation] adresse confirmée par le client", { phone, flowToken: row.flow_token });
-    await applyDeliveryFee(phone, row.candidate_lat, row.candidate_lng, row.profile_id, row.flow_token, row.candidate_address);
+    await confirmPendingLocation(row, phone);
     return;
   }
 
   // Pas "OUI" : le client décrit mieux sa position — on relance la détection sur ce nouveau texte.
+  const supabase = createServiceClient();
   await supabase.from("pending_location_confirmations").update({ status: "rejected" }).eq("id", confirmationId);
-  await handleTextLocation(row.profile_id, phone, replyText, row.flow_token);
+  await handleTextLocation(row.profile_id, phone, replyText, row.flow_token, { type: "text", waMessageId });
+}
+
+/** Le client clique "✅ Oui c'est ça" sur la proposition d'adresse. */
+export async function handleLocationConfirmButtonReply(phone: string): Promise<void> {
+  const confirmationId = await getPendingConfirmationId(phone);
+  if (!confirmationId) {
+    console.warn("[location-confirmation] confirm button clicked but no pending confirmation found", { phone });
+    return;
+  }
+  const row = await loadPendingConfirmation(confirmationId);
+  if (!row || row.status !== "pending") return;
+  await confirmPendingLocation(row, phone);
+}
+
+/** Le client clique "❌ Non, je précise" — on marque la proposition rejetée et on l'invite à redécrire sa position (aucun nouveau texte n'accompagne un clic bouton, contrairement au repli texte libre). */
+export async function handleLocationRejectButtonReply(phone: string): Promise<void> {
+  const confirmationId = await getPendingConfirmationId(phone);
+  if (!confirmationId) {
+    console.warn("[location-confirmation] reject button clicked but no pending confirmation found", { phone });
+    return;
+  }
+  const supabase = createServiceClient();
+  await supabase.from("pending_location_confirmations").update({ status: "rejected" }).eq("id", confirmationId);
+  try {
+    await sendWhatsappText(phone, buildLocationRejectionPromptMessage());
+  } catch (err) {
+    console.error("[location-confirmation] failed to send rejection prompt", err);
+  }
 }
