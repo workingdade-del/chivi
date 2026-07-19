@@ -563,6 +563,42 @@ export function buildOrderConfirmationMessage(params: {
   ].join("\n");
 }
 
+/** Confirmation envoyée au VRAI client après une commande soumise manuellement par le staff (numéro support classique). */
+export function buildStaffOrderClientConfirmationMessage(params: { clientName: string; itemsSummary: string; total: number }): string {
+  return [
+    `Bonjour ${params.clientName} ! Votre commande CHIVI a été enregistrée ✅`,
+    params.itemsSummary,
+    `Total : ${params.total.toLocaleString("fr-FR")} FCFA`,
+    "",
+    "Un livreur vous contactera bientôt. Merci !",
+  ].join("\n");
+}
+
+/** Récapitulatif envoyé au staff (numéro support) une fois la commande manuelle créée. */
+export function buildStaffOrderStaffConfirmationMessage(params: {
+  orderNumber: string;
+  clientName: string;
+  driverName: string | null;
+  total: number;
+}): string {
+  const driverPart = params.driverName ? `livreur ${params.driverName} notifié` : "⚠️ aucun livreur reconnu, assignation manuelle requise";
+  return `✅ Commande ${params.orderNumber} créée pour ${params.clientName}, ${driverPart}, total ${params.total.toLocaleString("fr-FR")} FCFA`;
+}
+
+/** Message d'erreur envoyé au staff quand le parsing échoue ou qu'un champ obligatoire manque — aucune commande n'est créée. */
+export function buildStaffOrderErrorMessage(issues: string[]): string {
+  return [
+    "❌ Je n'ai pas pu créer la commande :",
+    ...issues.map((issue) => `- ${issue}`),
+    "",
+    "Corrige et renvoie le message /commande complet.",
+  ].join("\n");
+}
+
+export function buildStaffOrderOutOfZoneMessage(address: string): string {
+  return `❌ L'adresse "${address}" semble en dehors de notre zone de livraison (Cotonou / Abomey-Calavi). Commande non créée — vérifie l'adresse avec le client.`;
+}
+
 export function buildWaMeOrderLink(businessNumber: string, orderNumber: string, itemsSummary: string, total: number) {
   const text = `Bonjour CHIVI, je confirme ma commande ${orderNumber} :\n${itemsSummary}\nTotal : ${total.toLocaleString("fr-FR")} FCFA`;
   return `https://wa.me/${businessNumber}?text=${encodeURIComponent(text)}`;

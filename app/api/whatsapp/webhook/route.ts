@@ -25,6 +25,8 @@ import {
 } from "@/lib/whatsapp";
 import { uploadWhatsappMedia } from "@/lib/whatsapp-media";
 import { findDriverByPhone } from "@/lib/drivers";
+import { isStaffNumber } from "@/lib/staff-numbers";
+import { handleStaffOrderSubmission } from "@/lib/staff-order";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
 import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
@@ -712,6 +714,12 @@ export async function POST(req: NextRequest) {
           type: message.type,
           waMessageId: message.id,
         });
+
+        if (await isStaffNumber(phone)) {
+          console.log("[whatsapp-webhook] message is from a staff number, routing to staff order handler", { phone });
+          await handleStaffOrderSubmission(phone, message);
+          continue;
+        }
 
         const driver = await findDriverByPhone(phone);
 

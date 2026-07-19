@@ -49,6 +49,52 @@ Crée ou met à jour un compte de connexion pour `/cuisine/login` et `/admin/log
 - Entrant : webhook `/api/whatsapp/webhook` — vérifie le handshake Meta (`hub.challenge`) et auto-crée le profil client + log chaque message dans `whatsapp_messages`.
 - **À faire une fois déployé** : dans Meta App Dashboard → WhatsApp → Configuration, enregistrer `https://<ton-domaine>/api/whatsapp/webhook` avec le verify token `WHATSAPP_VERIFY_TOKEN` (défini dans `.env.local`). Le numéro business (`22959398724`) doit aussi passer en mode production pour envoyer des messages à des numéros non enregistrés en test.
 
+## Commande manuelle via le numéro support
+
+Deux numéros WhatsApp distincts :
+
+- **Numéro support** `+229 59 39 87 24` — WhatsApp Business classique (app mobile normale, pas l'API Cloud). Le staff y discute directement avec les clients qui préfèrent l'humain.
+- **Numéro commande** (API Cloud, webhook `/api/whatsapp/webhook`) — une fois la commande convenue avec le client sur le numéro support, le staff transfère les infos ici via un message `/commande` structuré, traité automatiquement (parsing Groq, correspondance menu/livreur, création de la commande, notifications client + livreur).
+
+Le numéro support est enregistré comme "numéro staff autorisé" dans la table `staff_numbers` (migration `0030_staff_manual_orders.sql`) — tout message reçu depuis ce numéro exact est routé vers `handleStaffOrderSubmission` (`lib/staff-order.ts`), jamais vers l'IA ni le flow client normal. Pour ajouter un autre numéro staff plus tard : `insert into staff_numbers (phone, label) values ('229XXXXXXXX', 'Description');`.
+
+### Format du message `/commande`
+
+```
+/commande
+CLIENT: [nom]
+TEL: [numéro]
+PLATS: [liste plats avec quantités et variantes]
+PAIEMENT: [Cash/Momo livraison/Momo avance]
+LOCALISATION: [description texte]
+LIVREUR: [nom] [numéro]
+NOTE: [optionnel]
+```
+
+Le parsing (Groq) tolère les fautes de frappe et l'ordre différent des champs. Si le staff transfère la position WhatsApp (pin GPS) du client dans les 5 minutes avant ou après le message `/commande`, elle est utilisée à la place de la description texte pour calculer le tarif de livraison (plus fiable). Si un champ obligatoire manque (CLIENT, TEL, PLATS, LOCALISATION) ou qu'un plat n'est pas reconnu, aucune commande n'est créée — le staff reçoit un message clair indiquant quoi corriger.
+
+### Créer le raccourci "/commande" dans WhatsApp Business (à faire manuellement)
+
+Sur le téléphone qui utilise le numéro support (`+229 59 39 87 24`) dans l'app **WhatsApp Business** (pas WhatsApp normal) :
+
+1. **Réglages** → **Outils professionnels** → **Réponses rapides**
+2. Appuyer sur **+** pour créer une nouvelle réponse rapide
+3. Renseigner le message avec le template vide à remplir :
+   ```
+   /commande
+   CLIENT:
+   TEL:
+   PLATS:
+   PAIEMENT:
+   LOCALISATION:
+   LIVREUR:
+   NOTE:
+   ```
+4. Définir le raccourci clavier, par exemple `/commande` (WhatsApp Business propose automatiquement les réponses rapides en tapant `/` dans une conversation)
+5. Enregistrer
+
+Le staff n'a plus qu'à taper `/commande` dans la conversation avec le client, remplir les champs, puis **transférer** (bouton "Transférer" WhatsApp) ce message vers le numéro commande (API).
+
 ## Photos du menu
 
 Seule `Haricot gras + Gésier & Gari` a une vraie photo (`brand_kit/assets/photos/dish-haricot.jpg`). Les 14 autres plats attendent leurs fichiers dans le bucket Supabase Storage `menu-images`, sous les noms déjà référencés en base (`Spaghetti.jpg`, `Atcheke.jpg`, etc. — voir `image_path` dans `products`). Tant qu'une photo n'est pas uploadée, l'UI affiche le placeholder rayé prévu par le design.
