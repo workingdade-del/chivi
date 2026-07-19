@@ -248,6 +248,10 @@ export function buildLocationRejectionPromptMessage(): string {
   return "D'accord 🙏 Décris-moi plus précisément l'endroit (texte ou message vocal), ou envoie directement ta position (📎 → Localisation).";
 }
 
+export function buildSessionExpiredMessage(): string {
+  return "Il semble que votre commande précédente n'a pas été terminée. Voulez-vous recommencer ? Tapez menu pour voir nos plats 🍽️";
+}
+
 export function buildLocationNotFoundMessage(): string {
   return "🤔 Je n'ai pas trouvé cet endroit précisément.\nPouvez-vous envoyer votre localisation WhatsApp ?\n(Appuyez sur 📎 puis choisissez Localisation)";
 }

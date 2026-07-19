@@ -16,6 +16,7 @@ import {
   buildDeliveryFeeConfirmedMessage,
   buildLocationRequestMessage,
   buildFlowWelcomeMessage,
+  buildSessionExpiredMessage,
   downloadWhatsappMedia,
   normalizePhone,
   sendWhatsappText,
@@ -38,6 +39,8 @@ import {
   handleLocationRejectButtonReply,
   getPendingConfirmationId,
   getAwaitingLocationFlowToken,
+  expireStalePendingConfirmation,
+  cancelPendingLocationConfirmations,
 } from "@/lib/location-confirmation";
 import {
   handleOrderValidationReply,
@@ -46,6 +49,7 @@ import {
   cancelActiveFlowSessions,
   handleFlowRestart,
   handleUnexpectedFlowMessage,
+  expireStaleFlowSession,
 } from "@/lib/order-validation";
 
 // Le handshake GET lit des query params et le POST doit toujours
@@ -222,6 +226,47 @@ const FLOW_TRIGGER_KEYWORDS = ["menu", "commander", "commande", "je veux", "cart
 function isFlowTrigger(text: string): boolean {
   const normalized = text.toLowerCase().trim();
   return FLOW_TRIGGER_KEYWORDS.some((k) => normalized.includes(k));
+}
+
+/**
+ * Mots-clés qui doivent TOUJOURS avoir la priorité sur l'état actuel de la
+ * session, même bloquée/en attente de localisation (bug critique corrigé
+ * ici : un client revenant des heures/jours après avoir abandonné une
+ * commande se faisait répondre par l'ancien message bloqué au lieu d'être
+ * compris normalement). Ce sont les mêmes déclencheurs "menu"/"je veux
+ * commander" que FLOW_TRIGGER_KEYWORDS, plus les salutations et les mots
+ * d'annulation explicite.
+ */
+const RESET_KEYWORDS = ["annuler", "recommencer", "bonjour", "salut", "bonsoir", "menu", "je veux commander"];
+const CANCEL_ONLY_KEYWORDS = ["annuler", "recommencer"];
+
+/**
+ * Contrairement à isFlowTrigger (simple .includes()), on exige ici une
+ * frontière de mot : ce check peut ANNULER une session active, y compris
+ * récente/saine (voir isReset plus bas), donc un faux positif est plus
+ * coûteux qu'un simple déclenchement de Flow. Sans \b, "menu" matcherait
+ * par exemple à l'intérieur de "menuisier" dans une description d'adresse
+ * et effacerait le panier en cours du client pour rien.
+ */
+function normalizeForKeywordMatch(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function matchesKeyword(normalized: string, keywords: string[]): boolean {
+  return keywords.some((k) => new RegExp(`\\b${k}\\b`).test(normalized));
+}
+
+function isResetKeyword(text: string): boolean {
+  return matchesKeyword(normalizeForKeywordMatch(text), RESET_KEYWORDS);
+}
+
+/** "annuler" / "recommencer" doivent recevoir une confirmation explicite (pas juste être nettoyés silencieusement comme "bonjour"/"menu" qui retombent naturellement sur la logique normale). */
+function isCancelOnlyKeyword(text: string): boolean {
+  return matchesKeyword(normalizeForKeywordMatch(text), CANCEL_ONLY_KEYWORDS);
 }
 
 /** Crée une session panier (flow_sessions), accueille chaleureusement le client, puis envoie le Flow. Ne doit jamais faire échouer le webhook. */
@@ -723,6 +768,49 @@ export async function POST(req: NextRequest) {
 
         console.log("[whatsapp-webhook] message saved OK", { waMessageId: message.id, profileId: profile?.id });
 
+        // Expiration automatique des sessions/confirmations bloquées par
+        // inactivité (> 30 min) — bug critique corrigé ici : un client qui
+        // abandonne en pleine commande (ex: ne répond jamais à la demande
+        // de localisation) restait bloqué indéfiniment, tout nouveau
+        // message des heures/jours plus tard étant intercepté par l'ancien
+        // état au lieu d'être traité comme un message frais.
+        const [flowExpired, pendingExpired] = await Promise.all([
+          expireStaleFlowSession(phone),
+          expireStalePendingConfirmation(phone),
+        ]);
+        if (flowExpired || pendingExpired) {
+          console.log("[whatsapp-webhook] session(s) bloquée(s) expirée(s) par inactivité, notification envoyée", { profileId: profile?.id });
+          try {
+            const expiredMessage = buildSessionExpiredMessage();
+            const sendResult = await sendWhatsappText(phone, expiredMessage);
+            await supabase.from("whatsapp_messages").insert({
+              profile_id: profile?.id ?? null,
+              wa_message_id: extractMessageId(sendResult),
+              direction: "outbound",
+              phone,
+              message_type: "text",
+              content: expiredMessage,
+            });
+          } catch (err) {
+            console.error("[whatsapp-webhook] failed to send session-expired notice", err);
+          }
+        }
+
+        // Mots-clés de reset : TOUJOURS prioritaires, quel que soit l'état
+        // actuel de la session (même bloquée/en attente de localisation) —
+        // on nettoie tout état actif restant AVANT de calculer les
+        // variables de routing ci-dessous, pour que le message tombe
+        // naturellement dans la logique normale (nouveau Flow, IA, etc.)
+        // au lieu d'être intercepté par un état qui vient d'être annulé.
+        const isReset = Boolean(messageContent) && message.type === "text" && isResetKeyword(messageContent!);
+        if (isReset) {
+          console.log("[whatsapp-webhook] mot-clé de reset détecté, nettoyage de tout état actif avant routing", {
+            profileId: profile?.id,
+            text: messageContent,
+          });
+          await Promise.all([cancelActiveFlowSessions(phone), cancelPendingLocationConfirmations(phone)]);
+        }
+
         const pendingConfirmationId = messageContent && message.type === "text" ? await getPendingConfirmationId(phone) : null;
         const awaitingLocationFlowToken =
           !pendingConfirmationId && (message.type === "text" || message.type === "location")
@@ -736,7 +824,6 @@ export async function POST(req: NextRequest) {
           messageContent && (message.type === "text" || message.type === "audio")
             ? await getActiveFlowSession(phone)
             : null;
-        const isRestartRequest = Boolean(activeFlowSession) && messageContent?.trim().toLowerCase() === "recommencer";
 
         if (isPaused) {
           console.log("[whatsapp-webhook] system is paused, sending pause auto-reply", { profileId: profile?.id });
@@ -754,8 +841,8 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error("[whatsapp-webhook] pause auto-reply FAILED", err);
           }
-        } else if (isRestartRequest) {
-          console.log("[whatsapp-webhook] client demande RECOMMENCER, reset de la session Flow", { profileId: profile?.id });
+        } else if (isReset && isCancelOnlyKeyword(messageContent!)) {
+          console.log("[whatsapp-webhook] client demande annuler/recommencer, session déjà nettoyée", { profileId: profile?.id });
           await handleFlowRestart(phone, profile?.id ?? null);
         } else if (pendingConfirmationId && messageContent) {
           console.log("[whatsapp-webhook] customer replying to a pending location confirmation", { profileId: profile?.id });

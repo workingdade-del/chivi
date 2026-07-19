@@ -287,7 +287,7 @@ export interface Database {
           delivery_lat: number | null;
           delivery_lng: number | null;
           delivery_fee: number | null;
-          status: "cart" | "awaiting_location" | "awaiting_validation" | "awaiting_payment" | "completed" | "cancelled" | "escalated";
+          status: "cart" | "awaiting_location" | "awaiting_validation" | "awaiting_payment" | "completed" | "cancelled" | "escalated" | "expired";
           location_attempts: number;
           location_inputs: unknown;
           created_at: string;

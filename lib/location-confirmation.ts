@@ -58,6 +58,8 @@ async function appendLocationInput(flowToken: string | null, input: Omit<RawLoca
 
 const GENERIC_GPS_ADDRESS = "Position partagée via GPS";
 const MAX_LOCATION_ATTEMPTS = 3;
+/** Doit rester alignée avec STALE_SESSION_MINUTES dans lib/order-validation.ts. */
+const STALE_SESSION_MINUTES = 30;
 
 /** Y a-t-il une confirmation d'adresse en attente pour ce numéro ? Détermine si le prochain texte doit être routé vers handleLocationTextReply. */
 export async function getPendingConfirmationId(phone: string): Promise<string | null> {
@@ -71,6 +73,32 @@ export async function getPendingConfirmationId(phone: string): Promise<string | 
     .limit(1)
     .maybeSingle();
   return data?.id ?? null;
+}
+
+async function markPendingConfirmationsRejected(phone: string, cutoffIso?: string): Promise<boolean> {
+  const supabase = createServiceClient();
+  let query = supabase.from("pending_location_confirmations").update({ status: "rejected" }).eq("phone", phone).eq("status", "pending");
+  if (cutoffIso) query = query.lt("created_at", cutoffIso);
+  const { data } = await query.select("id");
+  return Boolean(data?.length);
+}
+
+/** Expire toute confirmation de position en attente depuis plus de STALE_SESSION_MINUTES — pendant du même bug que expireStaleFlowSession côté flow_sessions. */
+export async function expireStalePendingConfirmation(phone: string): Promise<boolean> {
+  const cutoff = new Date(Date.now() - STALE_SESSION_MINUTES * 60 * 1000).toISOString();
+  const changed = await markPendingConfirmationsRejected(phone, cutoff);
+  if (changed) {
+    console.log("[location-confirmation] confirmation(s) de position expirée(s) automatiquement (inactivité > 30min)", { phone });
+  }
+  return changed;
+}
+
+/** Annule immédiatement toute confirmation de position en attente, quel que soit son âge — appelé quand un mot-clé de reset est détecté (annuler/recommencer/bonjour/salut/menu/...), qui doit TOUJOURS avoir la priorité sur un état bloqué. */
+export async function cancelPendingLocationConfirmations(phone: string): Promise<void> {
+  const changed = await markPendingConfirmationsRejected(phone);
+  if (changed) {
+    console.log("[location-confirmation] confirmation(s) de position annulée(s) (mot-clé de reset)", { phone });
+  }
 }
 
 /** Une session Flow attend-elle la position de livraison de ce client ? */

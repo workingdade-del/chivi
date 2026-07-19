@@ -26,6 +26,9 @@ import type { PaymentMethod } from "@/lib/supabase/types";
 export type ActiveFlowStatus = "cart" | "awaiting_location" | "awaiting_validation" | "awaiting_payment";
 const ACTIVE_STATUSES: ActiveFlowStatus[] = ["cart", "awaiting_location", "awaiting_validation", "awaiting_payment"];
 
+/** Au-delà de cette inactivité, une session active est considérée abandonnée et n'a plus le droit d'intercepter les messages du client — voir expireStaleFlowSession. */
+const STALE_SESSION_MINUTES = 30;
+
 /** Session Flow active (non terminale) pour ce numéro, quelle que soit l'étape — utilisé pour garantir qu'aucun message ne peut s'échapper du flow structuré. */
 export async function getActiveFlowSession(phone: string): Promise<{ flowToken: string; status: ActiveFlowStatus } | null> {
   const supabase = createServiceClient();
@@ -60,6 +63,36 @@ export async function cancelActiveFlowSessions(phone: string): Promise<void> {
   if (data?.length) {
     console.log("[order-validation] sessions annulées", { phone, flowTokens: data.map((s) => s.flow_token) });
   }
+}
+
+/**
+ * Expire automatiquement toute session Flow active mais inactive depuis
+ * plus de STALE_SESSION_MINUTES — bug critique corrigé ici : un client qui
+ * abandonne en pleine commande (ex: ne répond jamais à la demande de
+ * localisation) restait bloqué indéfiniment, tout nouveau message des
+ * heures/jours plus tard étant intercepté par l'ancien état au lieu d'être
+ * traité comme un message frais. Distinct de 'cancelled' (annulation
+ * explicite) pour garder la distinction dans l'historique.
+ */
+export async function expireStaleFlowSession(phone: string): Promise<boolean> {
+  const supabase = createServiceClient();
+  const cutoff = new Date(Date.now() - STALE_SESSION_MINUTES * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("flow_sessions")
+    .update({ status: "expired" })
+    .eq("phone", phone)
+    .in("status", ACTIVE_STATUSES)
+    .lt("updated_at", cutoff)
+    .select("flow_token");
+
+  const expired = Boolean(data?.length);
+  if (expired) {
+    console.log("[order-validation] session(s) Flow expirée(s) automatiquement (inactivité > 30min)", {
+      phone,
+      flowTokens: data!.map((s) => s.flow_token),
+    });
+  }
+  return expired;
 }
 
 function isConfirmationText(text: string): boolean {
