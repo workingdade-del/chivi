@@ -114,7 +114,7 @@ export interface Database {
           delivery_zone_id: string | null;
           client_note: string | null;
           location_inputs: unknown;
-          source: "flow" | "staff_manual";
+          source: "flow" | "staff_manual" | "staff_manual_log";
           created_at: string;
           updated_at: string;
         },
