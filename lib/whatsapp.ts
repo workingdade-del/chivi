@@ -599,6 +599,30 @@ export function buildStaffOrderOutOfZoneMessage(address: string): string {
   return `❌ L'adresse "${address}" semble en dehors de notre zone de livraison (Cotonou / Abomey-Calavi). Commande non créée — vérifie l'adresse avec le client.`;
 }
 
+/** Résumé de compréhension envoyé au staff pendant la conversation /commande-log, avant enregistrement définitif. */
+export function buildStaffLogSummaryMessage(params: {
+  clientName: string;
+  clientPhone: string | null;
+  isExistingClient: boolean;
+  itemsSummary: string;
+  total: number;
+  location: string | null;
+  driverName: string | null;
+}): string {
+  const clientLine = params.clientPhone
+    ? `Client : ${params.clientName} (${params.isExistingClient ? "client connu, " : ""}${params.clientPhone})`
+    : `Client : ${params.clientName}`;
+  const lines = ["📋 J'ai compris :", clientLine, `Commande : ${params.itemsSummary}`, `Total : ${params.total.toLocaleString("fr-FR")} FCFA`];
+  if (params.location) lines.push(`Localisation : ${params.location}`);
+  if (params.driverName) lines.push(`Livreur : ${params.driverName}`);
+  lines.push("", "Je confirme et j'enregistre ? Répondez OUI ou précisez ce qui doit être corrigé.");
+  return lines.join("\n");
+}
+
+export function buildStaffLogSavedMessage(orderNumber: string, total: number): string {
+  return `✅ Enregistré - ${orderNumber} - ${total.toLocaleString("fr-FR")} FCFA`;
+}
+
 export function buildWaMeOrderLink(businessNumber: string, orderNumber: string, itemsSummary: string, total: number) {
   const text = `Bonjour CHIVI, je confirme ma commande ${orderNumber} :\n${itemsSummary}\nTotal : ${total.toLocaleString("fr-FR")} FCFA`;
   return `https://wa.me/${businessNumber}?text=${encodeURIComponent(text)}`;

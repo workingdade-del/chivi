@@ -8,14 +8,18 @@ import {
   buildStaffOrderStaffConfirmationMessage,
   buildStaffOrderErrorMessage,
   buildStaffOrderOutOfZoneMessage,
+  downloadWhatsappMedia,
   extractMessageId,
   normalizePhone,
 } from "@/lib/whatsapp";
+import { transcribeAudio } from "@/lib/groq";
 import { extractStaffOrder } from "@/lib/staff-order-ai";
 import { extractLocationFromText } from "@/lib/location-ai";
 import { findBestMatch } from "@/lib/fuzzy-match";
 import { searchPlace } from "@/lib/nominatim";
 import { haversineKm, computeDeliveryFee, KITCHEN_ORIGIN } from "@/lib/distance";
+import { expireStaleLogSession, getActiveLogSession, isLogSessionTrigger, startLogSession, continueLogSession } from "@/lib/staff-log";
+import { LOCATION_WINDOW_MINUTES, findRecentForwardedLocation } from "@/lib/staff-location";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
@@ -24,13 +28,11 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   momo_avance: "Mobile Money en avance",
 };
 
-/** Fenêtre pendant laquelle une position WhatsApp transférée par le staff est associée à la commande /commande en cours. */
-const LOCATION_WINDOW_MINUTES = 5;
-
 interface StaffInboundMessage {
   id: string;
   type: string;
   text?: { body: string };
+  audio?: { id: string; mime_type?: string };
   location?: { latitude: number; longitude: number };
 }
 
@@ -46,42 +48,42 @@ interface MatchedOrderLine {
   lineTotal: number;
 }
 
-/**
- * "notify" : comportement normal (WhatsApp Cloud API, Advanced Access) —
- * confirme le client, notifie le livreur, répond au staff sur WhatsApp.
- * "log" : /commande-log — en attendant l'Advanced Access Meta, enregistre
- * et comptabilise la commande (statut "livree" direct) SANS aucun envoi
- * WhatsApp sortant (ni client, ni livreur, ni staff). La seule confirmation
- * est la commande elle-même, visible dans l'Admin (Commandes/Rapports).
- */
-type StaffOrderMode = "notify" | "log";
-
-/** Préfixes détectés en tout début de message (insensible à la casse) — "/commande-log" doit être testé avant "/commande" (préfixe plus spécifique). */
-function detectStaffOrderMode(text: string): StaffOrderMode | null {
+/** "/commande" (pas "-log") déclenche l'ancien pipeline rigide qui notifie réellement client + livreur + staff. */
+function isNotifyTrigger(text: string): boolean {
   const normalized = text.trim().toLowerCase();
-  if (normalized.startsWith("/commande-log")) return "log";
-  if (normalized.startsWith("/commande")) return "notify";
-  return null;
+  return normalized.startsWith("/commande") && !normalized.startsWith("/commande-log");
 }
 
 /**
  * Point d'entrée unique pour TOUT message reçu d'un numéro staff (support
- * WhatsApp classique) — ne doit jamais déclencher l'IA conversationnelle ni
- * le flow de commande client. Une position transférée est associée à la
- * commande /commande la plus récente (< 5 min) ; tout autre texte non
- * préfixé par "/commande" ou "/commande-log" est simplement journalisé,
- * sans réponse automatique (le staff peut écrire des notes libres à lui-même).
+ * WhatsApp classique) — ne doit jamais déclencher l'IA conversationnelle
+ * client ni le flow de commande client. Un audio est transcrit (Whisper)
+ * puis traité comme du texte libre. Une position transférée est associée à
+ * la commande /commande la plus récente (< 5 min). Priorité : session
+ * conversationnelle /commande-log déjà active > "/commande" rigide >
+ * déclencheur /commande-log (texte ou audio) > ignoré silencieusement.
  */
 export async function handleStaffOrderSubmission(supportPhone: string, message: StaffInboundMessage): Promise<void> {
   const supabase = createServiceClient();
+
+  let inboundText: string | null = null;
+  if (message.type === "text") {
+    inboundText = message.text?.body?.trim() || null;
+  } else if (message.type === "audio" && message.audio) {
+    try {
+      const { buffer, mimeType } = await downloadWhatsappMedia(message.audio.id);
+      inboundText = (await transcribeAudio(buffer, mimeType)).trim() || null;
+    } catch (err) {
+      console.error("[staff-order] failed to transcribe staff audio", err);
+    }
+  }
 
   await supabase.from("whatsapp_messages").insert({
     wa_message_id: message.id,
     direction: "inbound",
     phone: supportPhone,
     message_type: message.type,
-    content:
-      message.type === "text" ? (message.text?.body ?? null) : message.type === "location" ? "Position transférée par le staff" : null,
+    content: inboundText ?? (message.type === "location" ? "Position transférée par le staff" : null),
     payload: message as unknown as Record<string, unknown>,
   });
 
@@ -90,14 +92,32 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
     return;
   }
 
-  const text = message.type === "text" ? (message.text?.body ?? "").trim() : "";
-  const mode = detectStaffOrderMode(text);
-  if (!mode) {
-    console.log("[staff-order] message staff ignoré (pas de /commande ni /commande-log)", { supportPhone, type: message.type });
+  if (!inboundText) {
+    console.log("[staff-order] message staff ignoré (pas de texte exploitable)", { supportPhone, type: message.type });
     return;
   }
 
-  await processStaffOrderCommand(supportPhone, text, mode);
+  // Sessions /commande-log bloquées par inactivité (> 15 min) — abandon
+  // silencieux avant tout traitement du nouveau message.
+  await expireStaleLogSession(supportPhone);
+
+  const activeLogSession = await getActiveLogSession(supportPhone);
+  if (activeLogSession) {
+    await continueLogSession(supportPhone, activeLogSession, inboundText);
+    return;
+  }
+
+  if (isNotifyTrigger(inboundText)) {
+    await processStaffOrderCommand(supportPhone, inboundText);
+    return;
+  }
+
+  if (isLogSessionTrigger(inboundText) || message.type === "audio") {
+    await startLogSession(supportPhone, inboundText);
+    return;
+  }
+
+  console.log("[staff-order] message staff ignoré (aucun déclencheur reconnu)", { supportPhone, type: message.type });
 }
 
 /**
@@ -133,30 +153,10 @@ async function attachForwardedLocationToRecentOrder(supportPhone: string, lat: n
   await supabase.from("orders").update({ delivery_lat: lat, delivery_lng: lng, delivery_fee: newFee, total: newTotal }).eq("id", order.id);
   console.log("[staff-order] position GPS transférée associée rétroactivement à la commande", { orderId: order.id, orderNumber: order.order_number });
 
-  // Mode "log" : jamais d'envoi WhatsApp, même pour cette confirmation de mise à jour.
+  // Commande "staff_manual_log" : jamais d'envoi WhatsApp, même pour cette confirmation de mise à jour.
   if (order.source === "staff_manual") {
     await replyToStaff(supportPhone, `📍 Position GPS associée à la commande ${order.order_number} (tarif mis à jour : ${newFee.toLocaleString("fr-FR")} FCFA).`);
   }
-}
-
-/** Position WhatsApp envoyée par le staff dans les LOCATION_WINDOW_MINUTES précédant le /commande — GPS réel prioritaire sur la description texte. */
-async function findRecentForwardedLocation(supportPhone: string): Promise<{ lat: number; lng: number } | null> {
-  const supabase = createServiceClient();
-  const cutoff = new Date(Date.now() - LOCATION_WINDOW_MINUTES * 60 * 1000).toISOString();
-
-  const { data } = await supabase
-    .from("whatsapp_messages")
-    .select("payload")
-    .eq("phone", supportPhone)
-    .eq("message_type", "location")
-    .eq("direction", "inbound")
-    .gte("created_at", cutoff)
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  const payload = data?.[0]?.payload as { location?: { latitude: number; longitude: number } } | null;
-  if (!payload?.location) return null;
-  return { lat: payload.location.latitude, lng: payload.location.longitude };
 }
 
 async function replyToStaff(supportPhone: string, message: string): Promise<void> {
@@ -175,29 +175,19 @@ async function replyToStaff(supportPhone: string, message: string): Promise<void
   }
 }
 
-/** N'envoie une réponse WhatsApp au staff qu'en mode "notify" — en mode "log", aucun envoi sortant, jamais, même pour signaler une erreur (voir StaffOrderMode). */
-async function maybeReplyToStaff(mode: StaffOrderMode, supportPhone: string, message: string): Promise<void> {
-  if (mode === "log") {
-    console.log("[staff-order] mode log — réponse supprimée (aucun envoi WhatsApp sortant)", { supportPhone, message });
-    return;
-  }
-  await replyToStaff(supportPhone, message);
-}
-
 /**
  * Parse (Groq), valide, fait correspondre plats/livreur avec la base, puis
- * crée la commande. N'importe quel champ obligatoire manquant ou ambigu
+ * crée la commande et notifie réellement client + livreur + staff. Format
+ * rigide "/commande" — n'importe quel champ obligatoire manquant ou ambigu
  * (client, tel, plats, localisation) interrompt le traitement AVANT toute
- * écriture en base — jamais de commande partielle. En mode "log", aucun
- * message WhatsApp n'est jamais envoyé (ni succès, ni erreur) — la seule
- * confirmation possible est la commande elle-même dans l'Admin.
+ * écriture en base — jamais de commande partielle.
  */
-async function processStaffOrderCommand(supportPhone: string, text: string, mode: StaffOrderMode): Promise<void> {
+async function processStaffOrderCommand(supportPhone: string, text: string): Promise<void> {
   const supabase = createServiceClient();
 
   const parsed = await extractStaffOrder(text);
   if (!parsed) {
-    await maybeReplyToStaff(mode, supportPhone, buildStaffOrderErrorMessage(["Le message n'a pas pu être analysé (service d'extraction indisponible)."]));
+    await replyToStaff(supportPhone, buildStaffOrderErrorMessage(["Le message n'a pas pu être analysé (service d'extraction indisponible)."]));
     return;
   }
 
@@ -270,7 +260,7 @@ async function processStaffOrderCommand(supportPhone: string, text: string, mode
   }
 
   if (issues.length) {
-    await maybeReplyToStaff(mode, supportPhone, buildStaffOrderErrorMessage(issues));
+    await replyToStaff(supportPhone, buildStaffOrderErrorMessage(issues));
     return;
   }
 
@@ -290,8 +280,7 @@ async function processStaffOrderCommand(supportPhone: string, text: string, mode
     const searchQuery = extracted?.rechercheNominatim || extracted?.quartier || extracted?.lieu || parsed.localisation!;
     const place = await searchPlace(searchQuery);
     if (!place) {
-      await maybeReplyToStaff(
-        mode,
+      await replyToStaff(
         supportPhone,
         buildStaffOrderErrorMessage([`Localisation introuvable : "${parsed.localisation}". Précise l'adresse ou transfère la position GPS du client.`])
       );
@@ -305,7 +294,7 @@ async function processStaffOrderCommand(supportPhone: string, text: string, mode
   const distanceKm = haversineKm(KITCHEN_ORIGIN.lat, KITCHEN_ORIGIN.lng, deliveryLat, deliveryLng);
   const { fee, needsConfirmation } = computeDeliveryFee(distanceKm);
   if (needsConfirmation || fee === null) {
-    await maybeReplyToStaff(mode, supportPhone, buildStaffOrderOutOfZoneMessage(deliveryAddress));
+    await replyToStaff(supportPhone, buildStaffOrderOutOfZoneMessage(deliveryAddress));
     return;
   }
 
@@ -332,11 +321,6 @@ async function processStaffOrderCommand(supportPhone: string, text: string, mode
     .from("orders")
     .insert({
       profile_id: profile?.id ?? null,
-      // Mode "log" : commande directement "livree" + payée — déjà comptabilisée,
-      // aucune notification à envoyer, elle apparaît telle quelle dans les
-      // Rapports (revenus/marge) comme n'importe quelle autre commande terminée.
-      status: mode === "log" ? "livree" : "recue",
-      payment_status: mode === "log" ? "paye" : "en_attente",
       payment_method: paymentMethod,
       subtotal,
       delivery_fee: fee,
@@ -345,14 +329,14 @@ async function processStaffOrderCommand(supportPhone: string, text: string, mode
       delivery_lat: deliveryLat,
       delivery_lng: deliveryLng,
       client_note: parsed.note,
-      source: mode === "log" ? "staff_manual_log" : "staff_manual",
+      source: "staff_manual",
     })
     .select("id, order_number")
     .single();
 
   if (orderError || !order) {
     console.error("[staff-order] order insert FAILED", orderError);
-    await maybeReplyToStaff(mode, supportPhone, buildStaffOrderErrorMessage(["Échec technique lors de la création de la commande — réessaie."]));
+    await replyToStaff(supportPhone, buildStaffOrderErrorMessage(["Échec technique lors de la création de la commande — réessaie."]));
     return;
   }
 
@@ -386,41 +370,25 @@ async function processStaffOrderCommand(supportPhone: string, text: string, mode
 
   const itemsSummary = matchedLines.map((l) => `${l.quantity}x ${l.productName}${l.variantName ? ` (${l.variantName})` : ""}`).join("\n");
 
-  // Mode "log" : jamais de message au client — l'objectif est justement d'éviter
-  // tout envoi bloqué par les limitations actuelles de l'Advanced Access Meta.
-  if (mode === "notify") {
-    try {
-      const sendResult = await sendWhatsappText(
-        parsed.clientTel!,
-        buildStaffOrderClientConfirmationMessage({ clientName: parsed.clientNom!, itemsSummary, total })
-      );
-      await supabase.from("whatsapp_messages").insert({
-        profile_id: profile?.id ?? null,
-        order_id: order.id,
-        wa_message_id: extractMessageId(sendResult),
-        direction: "outbound",
-        phone: parsed.clientTel!,
-        message_type: "text",
-        content: "Confirmation de commande (soumission staff)",
-      });
-    } catch (err) {
-      console.error("[staff-order] client confirmation send FAILED", err);
-    }
+  try {
+    const sendResult = await sendWhatsappText(
+      parsed.clientTel!,
+      buildStaffOrderClientConfirmationMessage({ clientName: parsed.clientNom!, itemsSummary, total })
+    );
+    await supabase.from("whatsapp_messages").insert({
+      profile_id: profile?.id ?? null,
+      order_id: order.id,
+      wa_message_id: extractMessageId(sendResult),
+      direction: "outbound",
+      phone: parsed.clientTel!,
+      message_type: "text",
+      content: "Confirmation de commande (soumission staff)",
+    });
+  } catch (err) {
+    console.error("[staff-order] client confirmation send FAILED", err);
   }
 
-  if (matchedDriver && mode === "log") {
-    // Comptabilisation uniquement : on garde la trace du livreur associé
-    // (commande déjà "livree") sans jamais le notifier ni toucher son statut
-    // de disponibilité, qui n'a pas de sens pour une commande enregistrée
-    // rétroactivement.
-    await supabase.from("order_assignments").insert({
-      order_id: order.id,
-      driver_id: matchedDriver.id,
-      status: "livree",
-      delivered_at: new Date().toISOString(),
-    });
-    console.log("[staff-order] mode log — livreur associé pour comptabilité, aucun envoi WhatsApp", { orderId: order.id, driverId: matchedDriver.id });
-  } else if (matchedDriver) {
+  if (matchedDriver) {
     await supabase.from("order_assignments").insert({ order_id: order.id, driver_id: matchedDriver.id });
     await supabase.from("orders").update({ status: "en_route" }).eq("id", order.id);
     await supabase.from("drivers").update({ status: "en_course" }).eq("id", matchedDriver.id);
@@ -483,8 +451,7 @@ async function processStaffOrderCommand(supportPhone: string, text: string, mode
     }
   }
 
-  await maybeReplyToStaff(
-    mode,
+  await replyToStaff(
     supportPhone,
     buildStaffOrderStaffConfirmationMessage({
       orderNumber: order.order_number,

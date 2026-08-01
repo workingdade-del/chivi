@@ -305,6 +305,18 @@ export interface Database {
         },
         "phone"
       >;
+      staff_log_sessions: Table<
+        {
+          id: string;
+          staff_phone: string;
+          status: "awaiting_confirmation" | "completed" | "abandoned";
+          draft: unknown;
+          awaiting_final_confirmation: boolean;
+          created_at: string;
+          updated_at: string;
+        },
+        "staff_phone" | "draft"
+      >;
     };
     Views: {
       all_conversations: {
