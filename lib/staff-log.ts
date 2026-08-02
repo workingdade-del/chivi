@@ -7,23 +7,6 @@ import { findRecentForwardedLocation } from "@/lib/staff-location";
 /** Au-delà de cette inactivité, une session /commande-log en cours est abandonnée silencieusement (pas de message, contrairement au reste du flow). */
 const STALE_LOG_SESSION_MINUTES = 15;
 
-/** Déclencheurs souples menant à la NOUVELLE session conversationnelle (remplace l'ancien format rigide "/commande-log CLIENT: ..."). */
-const LOG_TRIGGER_PHRASES = [
-  "/commande-log",
-  "enregistre cette commande",
-  "enregistrer cette commande",
-  "enregistre la commande",
-  "enregistrer la commande",
-  "note cette commande",
-  "note la commande",
-  "enregistre",
-];
-
-export function isLogSessionTrigger(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  return LOG_TRIGGER_PHRASES.some((p) => normalized.startsWith(p));
-}
-
 const CONFIRMATION_WORDS = ["oui", "ok", "okay", "correct", "confirme", "confirmé", "c'est bon", "cest bon", "parfait", "exact", "c'est ca", "cest ca", "voila", "voilà"];
 
 function isConfirmationReply(text: string): boolean {

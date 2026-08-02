@@ -18,7 +18,7 @@ import { extractLocationFromText } from "@/lib/location-ai";
 import { findBestMatch } from "@/lib/fuzzy-match";
 import { searchPlace } from "@/lib/nominatim";
 import { haversineKm, computeDeliveryFee, KITCHEN_ORIGIN } from "@/lib/distance";
-import { expireStaleLogSession, getActiveLogSession, isLogSessionTrigger, startLogSession, continueLogSession } from "@/lib/staff-log";
+import { expireStaleLogSession, getActiveLogSession, startLogSession, continueLogSession } from "@/lib/staff-log";
 import { LOCATION_WINDOW_MINUTES, findRecentForwardedLocation } from "@/lib/staff-location";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
@@ -61,7 +61,8 @@ function isNotifyTrigger(text: string): boolean {
  * puis traité comme du texte libre. Une position transférée est associée à
  * la commande /commande la plus récente (< 5 min). Priorité : session
  * conversationnelle /commande-log déjà active > "/commande" rigide >
- * déclencheur /commande-log (texte ou audio) > ignoré silencieusement.
+ * tout le reste (texte libre ou audio transcrit) démarre une nouvelle
+ * session /commande-log, sans exiger de mot-clé précis (voir plus bas).
  */
 export async function handleStaffOrderSubmission(supportPhone: string, message: StaffInboundMessage): Promise<void> {
   const supabase = createServiceClient();
@@ -112,12 +113,15 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
     return;
   }
 
-  if (isLogSessionTrigger(inboundText) || message.type === "audio") {
-    await startLogSession(supportPhone, inboundText);
-    return;
-  }
-
-  console.log("[staff-order] message staff ignoré (aucun déclencheur reconnu)", { supportPhone, type: message.type });
+  // Tout le reste (texte libre OU audio transcrit) est traité comme une
+  // tentative de description de commande à enregistrer. Ce numéro n'est
+  // jamais utilisé pour du chat informel — le staff ne le message que pour
+  // interagir avec ce bot — donc contrairement à "/commande" (rigide), pas
+  // besoin d'un mot-clé strict en début de message : un texte libre doit
+  // démarrer la conversation exactement comme un audio le fait déjà (bug
+  // corrigé ici : le texte exigeait un préfixe exact, l'audio non, d'où
+  // l'audio qui "marchait" et le texte qui restait muet).
+  await startLogSession(supportPhone, inboundText);
 }
 
 /**
