@@ -27,6 +27,7 @@ import { uploadWhatsappMedia } from "@/lib/whatsapp-media";
 import { findDriverByPhone } from "@/lib/drivers";
 import { isStaffNumber } from "@/lib/staff-numbers";
 import { handleStaffOrderSubmission } from "@/lib/staff-order";
+import { resolveEnvContextForPhoneNumberId, runWithEnvContext } from "@/lib/env-context";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
 import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
@@ -125,6 +126,8 @@ interface WhatsappWebhookPayload {
         contacts?: { profile?: { name?: string }; wa_id: string }[];
         messages?: WhatsappMessage[];
         statuses?: WhatsappStatus[];
+        /** Identifie quel numéro WhatsApp (prod ou test) a reçu ce message — voir lib/env-context.ts. */
+        metadata?: { display_phone_number?: string; phone_number_id?: string };
       };
       field?: string;
     }[];
@@ -675,15 +678,7 @@ export async function POST(req: NextRequest) {
 
   console.log("[whatsapp-webhook] POST received", rawBody);
 
-  const supabase = createServiceClient();
   const entries = payload.entry ?? [];
-
-  const { data: settings } = await supabase
-    .from("system_settings")
-    .select("is_paused, pause_reason")
-    .eq("id", true)
-    .maybeSingle();
-  const isPaused = settings?.is_paused ?? false;
 
   if (entries.length === 0) {
     console.warn("[whatsapp-webhook] payload has no entry[] — nothing to process", payload);
@@ -698,24 +693,58 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      if (!value?.messages?.length) {
-        if (value?.statuses?.length) {
-          await handleStatusUpdates(value.statuses);
-        } else {
-          console.log("[whatsapp-webhook] change has no messages and no statuses", { field: change.field });
-        }
+      // Un seul numéro Meta App reçoit les webhooks pour le numéro
+      // production ET le numéro test — chacun avec son propre projet
+      // Supabase. On détermine l'environnement une fois par changement
+      // (metadata.phone_number_id) et on l'attache à tout le traitement qui
+      // en découle (voir lib/env-context.ts) : createServiceClient() et les
+      // fonctions d'envoi WhatsApp choisissent alors automatiquement les
+      // bons identifiants, sans qu'aucune fonction plus bas n'ait besoin de
+      // le savoir explicitement.
+      let envContext;
+      try {
+        envContext = resolveEnvContextForPhoneNumberId(value?.metadata?.phone_number_id);
+      } catch (err) {
+        console.error("[whatsapp-webhook] impossible de résoudre l'environnement pour ce phone_number_id — changement ignoré", {
+          phoneNumberId: value?.metadata?.phone_number_id,
+          error: err,
+        });
         continue;
       }
+      const envTag = envContext.env === "test" ? "[TEST]" : "[PROD]";
+      console.log(`${envTag} [whatsapp-webhook] routing vers l'environnement Supabase`, {
+        env: envContext.env,
+        phoneNumberId: value?.metadata?.phone_number_id,
+      });
 
-      for (const message of value.messages) {
-        const phone = normalizePhone(message.from);
-        console.log("[whatsapp-webhook] processing inbound message", {
-          from: phone,
-          type: message.type,
-          waMessageId: message.id,
-        });
+      await runWithEnvContext(envContext, async () => {
+        if (!value?.messages?.length) {
+          if (value?.statuses?.length) {
+            await handleStatusUpdates(value.statuses);
+          } else {
+            console.log(`${envTag} [whatsapp-webhook] change has no messages and no statuses`, { field: change.field });
+          }
+          return;
+        }
 
-        if (await isStaffNumber(phone)) {
+        const supabase = createServiceClient();
+
+        const { data: settings } = await supabase
+          .from("system_settings")
+          .select("is_paused, pause_reason")
+          .eq("id", true)
+          .maybeSingle();
+        const isPaused = settings?.is_paused ?? false;
+
+        for (const message of value.messages) {
+          const phone = normalizePhone(message.from);
+          console.log(`${envTag} [whatsapp-webhook] processing inbound message`, {
+            from: phone,
+            type: message.type,
+            waMessageId: message.id,
+          });
+
+          if (await isStaffNumber(phone)) {
           console.log("[whatsapp-webhook] message is from a staff number, routing to staff order handler", { phone });
           await handleStaffOrderSubmission(phone, message);
           continue;
@@ -931,7 +960,8 @@ export async function POST(req: NextRequest) {
             messageType: message.type,
           });
         }
-      }
+        }
+      });
     }
   }
 

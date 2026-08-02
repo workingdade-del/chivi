@@ -1,4 +1,5 @@
 import { CATEGORY_LABELS } from "@/lib/product-categories";
+import { getCurrentEnvContext } from "@/lib/env-context";
 
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
 
@@ -11,12 +12,18 @@ export function extractMessageId(response: WhatsappSendResponse): string | null 
   return response.messages?.[0]?.id ?? null;
 }
 
+/**
+ * PROD ou TEST selon le contexte ambiant posé par le webhook (voir
+ * lib/env-context.ts) — chaque fonction d'envoi de ce fichier (sendWhatsappText,
+ * sendWhatsappMedia, sendWhatsappFlow, etc.) passe donc automatiquement par
+ * le bon phone_number_id/token sans qu'aucun appelant n'ait à s'en soucier.
+ */
 function phoneNumberId(): string {
-  return process.env.WHATSAPP_PHONE_NUMBER_ID!;
+  return getCurrentEnvContext().whatsappPhoneNumberId;
 }
 
 function token(): string {
-  return process.env.WHATSAPP_TOKEN!;
+  return getCurrentEnvContext().whatsappToken;
 }
 
 export const NEW_CONVERSATION_TEMPLATE_NAME = "chivi_nouvelle_commande";
