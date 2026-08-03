@@ -4,6 +4,7 @@ import { MessageCircle } from "lucide-react";
 import { getClientDetail } from "@/lib/admin";
 import { formatFcfa } from "@/lib/format";
 import { STATUS_LABELS } from "@/lib/order-status";
+import { ClientNameEditor } from "@/components/admin/ClientNameEditor";
 
 export default async function AdminClientDetailPage({ params }: { params: { id: string } }) {
   const { profile, orders } = await getClientDetail(params.id);
@@ -22,7 +23,7 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
           <div className="w-[76px] h-[76px] mx-auto rounded-full bg-maroon text-gold flex items-center justify-center font-mega text-3xl">
             {name[0]?.toUpperCase()}
           </div>
-          <div className="font-bold text-lg text-ink mt-3.5">{name}</div>
+          <ClientNameEditor clientId={profile.id} name={name} />
           <div className="inline-flex items-center gap-1.5 bg-status-green-bg text-status-green-deep text-xs font-semibold px-2.5 py-1.5 rounded-full mt-2.5">
             <MessageCircle size={13} />
             Profil auto-créé via WhatsApp

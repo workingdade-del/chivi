@@ -19,8 +19,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   return (
     <div>
       <RealtimeRefresh tables={["orders"]} />
-      <div className="flex gap-2 mb-4">
-        {FILTERS.map((f) => (
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex gap-2">
+          {FILTERS.map((f) => (
           <Link
             key={f.id}
             href={f.id === "all" ? "/admin/orders" : `/admin/orders?status=${f.id}`}
@@ -28,9 +29,16 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
               activeFilter === f.id ? "bg-maroon text-gold" : "bg-white border border-[#e2d6bd] text-[#6d6358] font-semibold"
             }`}
           >
-            {f.label}
-          </Link>
-        ))}
+              {f.label}
+            </Link>
+          ))}
+        </div>
+        <Link
+          href="/admin/orders/new"
+          className="px-4 py-2 rounded-full text-[13px] font-bold bg-maroon text-gold"
+        >
+          + Nouvelle commande
+        </Link>
       </div>
 
       <div className="bg-white border border-[#ece2cd] rounded-2xl overflow-hidden">

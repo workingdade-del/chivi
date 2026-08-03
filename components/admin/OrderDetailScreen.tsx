@@ -6,7 +6,11 @@ import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
 import { CLIENT_TIMELINE, STATUS_LABELS, STATUS_COLORS, clientTimelineIndex } from "@/lib/order-status";
 import { CancelOrderModal } from "@/components/shared/CancelOrderModal";
+import { EditOrderModal } from "@/components/admin/EditOrderModal";
 import type { OrderDetailData } from "@/lib/admin";
+import type { OrderStatus } from "@/lib/supabase/types";
+
+const ALL_STATUSES: OrderStatus[] = ["recue", "en_preparation", "prete", "en_route", "livree", "annulee"];
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash_livraison: "Cash à la livraison",
@@ -28,6 +32,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
   const [selectedDriver, setSelectedDriver] = useState("");
   const [busy, setBusy] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const assignment = order.order_assignments?.[0];
   const driver = assignment?.drivers ?? null;
@@ -92,6 +97,19 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
     router.refresh();
   }
 
+  async function handleStatusChange(newStatus: OrderStatus) {
+    if (newStatus === order.status) return;
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", order.id);
+    setBusy(false);
+    if (error) {
+      alert("Échec du changement de statut : " + error.message);
+      return;
+    }
+    router.refresh();
+  }
+
   async function handleRelaunch() {
     setBusy(true);
     try {
@@ -119,10 +137,21 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
               {PAYMENT_LABELS[order.payment_method]}
             </div>
           </div>
-          <span className={`text-[13px] font-bold px-3.5 py-1.5 rounded-full ${STATUS_COLORS[order.status]}`}>
-            {STATUS_LABELS[order.status]}
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span className={`text-[13px] font-bold px-3.5 py-1.5 rounded-full ${STATUS_COLORS[order.status]}`}>
+              {STATUS_LABELS[order.status]}
+            </span>
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border-2 border-[#e6dcc4] text-[#6d6358]"
+            >
+              Modifier
+            </button>
+          </div>
         </div>
+        {order.delivery_address && (
+          <div className="text-[13px] text-[#6d6358] mt-2">📍 {order.delivery_address}</div>
+        )}
         <div className="h-px bg-[#efe6d3] my-5" />
         <div className="flex flex-col gap-3.5">
           {order.order_items.map((item) => (
@@ -155,6 +184,22 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
       </div>
 
       <div className="flex flex-col gap-4">
+        <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
+          <div className="font-bold text-sm text-ink mb-3">Changer le statut</div>
+          <select
+            value={order.status}
+            onChange={(e) => handleStatusChange(e.target.value as OrderStatus)}
+            disabled={busy}
+            className="w-full border-2 border-[#e6dcc4] rounded-xl px-3 py-2.5 text-sm font-semibold"
+          >
+            {ALL_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="font-bold text-sm text-ink mb-3.5">Suivi</div>
           {CLIENT_TIMELINE.map((status, i) => {
@@ -282,6 +327,17 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
           onClose={() => setShowCancelModal(false)}
           onCancelled={() => {
             setShowCancelModal(false);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {showEditModal && (
+        <EditOrderModal
+          order={order}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => {
+            setShowEditModal(false);
             router.refresh();
           }}
         />

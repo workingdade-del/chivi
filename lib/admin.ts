@@ -16,12 +16,14 @@ export interface OrderDetailData {
   profiles: { full_name: string | null; whatsapp_phone: string } | null;
   order_items: {
     id: string;
+    product_id: string | null;
+    product_variant_id: string | null;
     product_name: string;
     variant_name: string | null;
     unit_price: number;
     quantity: number;
     line_total: number;
-    order_supplements: { supplement_name: string; unit_price: number }[];
+    order_supplements: { supplement_id: string | null; supplement_name: string; unit_price: number }[];
   }[];
   order_assignments: {
     id: string;
@@ -186,7 +188,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetailData | null
   const { data: order } = await supabase
     .from("orders")
     .select(
-      "id, order_number, status, payment_method, subtotal, delivery_fee, total, client_note, created_at, delivery_address, profiles(full_name, whatsapp_phone), order_items(id, product_name, variant_name, unit_price, quantity, line_total, order_supplements(supplement_name, unit_price)), order_assignments(id, drivers(id, name, phone))"
+      "id, order_number, status, payment_method, subtotal, delivery_fee, total, client_note, created_at, delivery_address, profiles(full_name, whatsapp_phone), order_items(id, product_id, product_variant_id, product_name, variant_name, unit_price, quantity, line_total, order_supplements(supplement_id, supplement_name, unit_price)), order_assignments(id, drivers(id, name, phone))"
     )
     .eq("id", id)
     .maybeSingle();
