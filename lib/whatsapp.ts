@@ -630,10 +630,11 @@ export function buildStaffLogSavedMessage(orderNumber: string, total: number): s
   return `✅ Enregistré - ${orderNumber} - ${total.toLocaleString("fr-FR")} FCFA`;
 }
 
-export function buildWaMeOrderLink(businessNumber: string, orderNumber: string, itemsSummary: string, total: number) {
-  const text = `Bonjour CHIVI, je confirme ma commande ${orderNumber} :\n${itemsSummary}\nTotal : ${total.toLocaleString("fr-FR")} FCFA`;
-  return `https://wa.me/${businessNumber}?text=${encodeURIComponent(text)}`;
-}
+// buildWaMeOrderLink vit dans lib/wa-link.ts (pas ici) — c'est une fonction
+// pure sans dépendance serveur, importée par un Client Component
+// (app/client/payment/page.tsx). La garder dans ce fichier entraînerait
+// lib/env-context.ts (node:async_hooks) dans le bundle client dès qu'un
+// composant client importe quoi que ce soit d'ici.
 
 export function buildPauseAutoReply(reason: string): string {
   return `Bonjour ! 😔 Nous sommes momentanément indisponibles.\nRaison : ${reason}.\nNous reviendrons très bientôt. Pour toute urgence, contactez notre support : wa.me/22959398724`;

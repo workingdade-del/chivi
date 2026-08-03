@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Banknote } from "lucide-react";
 import { useCartStore, cartSubtotal } from "@/lib/store/cart";
 import { formatFcfa } from "@/lib/format";
-import { buildWaMeOrderLink } from "@/lib/whatsapp";
+import { buildWaMeOrderLink } from "@/lib/wa-link";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
 const PAYMENT_OPTIONS: { id: PaymentMethod; name: string; desc: string }[] = [
