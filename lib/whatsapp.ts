@@ -1,4 +1,3 @@
-import { CATEGORY_LABELS } from "@/lib/product-categories";
 import { getCurrentEnvContext } from "@/lib/env-context";
 
 const GRAPH_BASE = "https://graph.facebook.com/v21.0";
@@ -384,7 +383,7 @@ export async function sendPaymentMethodButtons(to: string) {
 }
 
 /** Envoie le WhatsApp Flow de commande CHIVI. flowToken identifie la session (panier) côté data endpoint. Serveur uniquement. */
-export async function sendWhatsappFlow(to: string, flowToken: string) {
+export async function sendWhatsappFlow(to: string, flowToken: string, categories: { id: string; title: string }[]) {
   const flowId = process.env.WHATSAPP_FLOW_ID;
   if (!flowId) {
     throw new Error("WHATSAPP_FLOW_ID n'est pas configurée");
@@ -416,13 +415,14 @@ export async function sendWhatsappFlow(to: string, flowToken: string) {
             // flow_action_payload avec `screen` mais sans `data` est un cas
             // ambigu côté Meta — observé en réel avec la liste vide sous
             // "Choisis une catégorie" alors que l'endpoint répond
-            // correctement quand on le teste directement. Comme les
-            // catégories sont statiques (aucune dépendance BDD), les fournir
-            // ici garantit le premier rendu quel que soit le comportement
-            // exact de Meta vis-à-vis de INIT.
+            // correctement quand on le teste directement. Les catégories
+            // sont désormais gérées depuis l'Admin (table `categories`, plus
+            // un enum figé) — c'est pourquoi l'appelant les récupère et les
+            // passe ici, ce fichier restant volontairement sans dépendance
+            // Supabase directe.
             flow_action_payload: {
               screen: "CATEGORIES",
-              data: { categories: Object.entries(CATEGORY_LABELS).map(([id, title]) => ({ id, title })) },
+              data: { categories },
             },
           },
         },

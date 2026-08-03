@@ -1,4 +1,4 @@
-import { getMenu, CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/menu";
+import { getMenu, getProductCategories } from "@/lib/menu";
 import { MenuScreen } from "@/components/client/MenuScreen";
 import { PauseGate } from "@/components/client/PauseGate";
 import { getSystemSettings } from "@/lib/system-settings";
@@ -7,10 +7,10 @@ export const revalidate = 60;
 
 export default async function MenuPage() {
   try {
-    const [products, settings] = await Promise.all([getMenu(), getSystemSettings()]);
-    const categories = CATEGORY_ORDER.filter((c) => products.some((p) => p.category === c)).map(
-      (c) => ({ id: c, name: CATEGORY_LABELS[c] })
-    );
+    const [products, settings, allCategories] = await Promise.all([getMenu(), getSystemSettings(), getProductCategories()]);
+    const categories = allCategories
+      .filter((c) => products.some((p) => p.category === c.slug))
+      .map((c) => ({ id: c.slug, name: c.label }));
 
     return (
       <PauseGate initial={{ isPaused: settings.isPaused, pauseReason: settings.pauseReason }}>

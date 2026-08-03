@@ -26,6 +26,7 @@ import {
 import { uploadWhatsappMedia } from "@/lib/whatsapp-media";
 import { findDriverByPhone } from "@/lib/drivers";
 import { isStaffNumber } from "@/lib/staff-numbers";
+import { getProductCategories } from "@/lib/categories";
 import { handleStaffOrderSubmission } from "@/lib/staff-order";
 import { resolveEnvContextForPhoneNumberId, runWithEnvContext } from "@/lib/env-context";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
@@ -314,7 +315,12 @@ async function handleFlowTrigger(profileId: string | null, phone: string) {
   }
 
   try {
-    const sendResult = await sendWhatsappFlow(phone, session.flow_token);
+    const productCategories = await getProductCategories(supabase);
+    const sendResult = await sendWhatsappFlow(
+      phone,
+      session.flow_token,
+      productCategories.map((c) => ({ id: c.slug, title: c.label }))
+    );
     await supabase.from("whatsapp_messages").insert({
       profile_id: profileId,
       wa_message_id: extractMessageId(sendResult),

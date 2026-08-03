@@ -103,4 +103,4 @@ export async function getDeliveryZones(): Promise<MenuDeliveryZone[]> {
   return data.map((z) => ({ id: z.id, name: z.name, feeMin: z.fee_min, feeMax: z.fee_max }));
 }
 
-export { CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/product-categories";
+export { getCategories, getProductCategories, getCategoryLabels, type Category } from "@/lib/categories";

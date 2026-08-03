@@ -1,5 +1,5 @@
-import { ExpensesScreen } from "@/components/cuisine/ExpensesScreen";
+import { ExpensesManager } from "@/components/shared/ExpensesManager";
 
 export default function CuisineExpensesPage() {
-  return <ExpensesScreen />;
+  return <ExpensesManager theme="dark" />;
 }

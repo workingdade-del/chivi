@@ -1,7 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatFcfa } from "@/lib/format";
-import { CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/menu";
-import type { ProductCategory } from "@/lib/supabase/types";
+import { getProductCategories } from "@/lib/categories";
 
 const CHIVI_ORDER_LINK = "https://chividashboard.vercel.app/client";
 
@@ -9,7 +8,7 @@ const CHIVI_ORDER_LINK = "https://chividashboard.vercel.app/client";
 export async function buildChiviSystemPrompt(): Promise<string> {
   const supabase = createServiceClient();
 
-  const [{ data: products }, { data: variants }, { data: supplements }, { data: zones }] = await Promise.all([
+  const [{ data: products }, { data: variants }, { data: supplements }, { data: zones }, categories] = await Promise.all([
     supabase
       .from("products")
       .select("id, name, category, base_price")
@@ -23,22 +22,25 @@ export async function buildChiviSystemPrompt(): Promise<string> {
       .order("sort_order"),
     supabase.from("supplements").select("name, price").eq("is_available", true).order("sort_order"),
     supabase.from("delivery_zones").select("name, fee_min, fee_max").order("sort_order"),
+    getProductCategories(supabase),
   ]);
 
-  const menuByCategory = CATEGORY_ORDER.map((category) => {
-    const items = (products ?? []).filter((p) => p.category === category);
-    if (items.length === 0) return null;
+  const menuByCategory = categories
+    .map((category) => {
+      const items = (products ?? []).filter((p) => p.category === category.slug);
+      if (items.length === 0) return null;
 
-    const lines = items.map((p) => {
-      const productVariants = (variants ?? []).filter((v) => v.product_id === p.id);
-      const variantsLabel = productVariants.length
-        ? ` (variantes : ${productVariants.map((v) => `${v.name} ${formatFcfa(v.price)}`).join(", ")})`
-        : "";
-      return `- ${p.name} : ${formatFcfa(p.base_price)}${variantsLabel}`;
-    });
+      const lines = items.map((p) => {
+        const productVariants = (variants ?? []).filter((v) => v.product_id === p.id);
+        const variantsLabel = productVariants.length
+          ? ` (variantes : ${productVariants.map((v) => `${v.name} ${formatFcfa(v.price)}`).join(", ")})`
+          : "";
+        return `- ${p.name} : ${formatFcfa(p.base_price)}${variantsLabel}`;
+      });
 
-    return `${CATEGORY_LABELS[category as ProductCategory]} :\n${lines.join("\n")}`;
-  }).filter(Boolean);
+      return `${category.label} :\n${lines.join("\n")}`;
+    })
+    .filter(Boolean);
 
   const supplementsLine = (supplements ?? [])
     .map((s) => `${s.name} ${formatFcfa(s.price)}`)

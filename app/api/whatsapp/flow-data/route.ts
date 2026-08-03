@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { decryptFlowRequest, encryptFlowResponse, type FlowRequestBody } from "@/lib/flow-encryption";
 import { formatFcfa } from "@/lib/format";
-import { CATEGORY_LABELS } from "@/lib/product-categories";
+import { getProductCategories } from "@/lib/categories";
 import type { ProductCategory } from "@/lib/supabase/types";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +57,8 @@ async function handleAction(payload: {
   const flowToken = payload.flow_token ?? "";
 
   if (payload.action === "INIT") {
-    const categories = Object.entries(CATEGORY_LABELS).map(([id, title]) => ({ id, title }));
+    const productCategories = await getProductCategories(supabase);
+    const categories = productCategories.map((c) => ({ id: c.slug, title: c.label }));
     console.log("[flow-data] réponse INIT", { flowToken, categoriesCount: categories.length });
     return { screen: "CATEGORIES", data: { categories } };
   }
@@ -84,10 +85,13 @@ async function handleAction(payload: {
       await saveCart(flowToken, session.phone, cart);
     }
 
+    const categoryLabels = await getProductCategories(supabase);
+    const categoryName = categoryLabels.find((c) => c.slug === categoryId)?.label ?? "Menu";
+
     return {
       screen: "PRODUCT_LIST",
       data: {
-        category_name: CATEGORY_LABELS[categoryId] ?? "Menu",
+        category_name: categoryName,
         products: (products ?? []).map((p) => ({ id: p.id, title: p.name, description: p.description ?? "" })),
       },
     };

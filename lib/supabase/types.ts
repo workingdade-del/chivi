@@ -1,4 +1,9 @@
-export type ProductCategory = "plats_chivi" | "plats_traditionnels" | "boissons";
+/**
+ * Autrefois un enum figé (CHECK constraint + union), désormais une simple
+ * chaîne référençant categories.slug (migration 0033) — les catégories
+ * sont gérables (créées/renommées/supprimées) depuis l'Admin.
+ */
+export type ProductCategory = string;
 export type OrderStatus = "recue" | "en_preparation" | "prete" | "en_route" | "livree" | "annulee";
 export type PaymentMethod = "cash_livraison" | "momo_livraison" | "momo_avance";
 export type PaymentStatus = "en_attente" | "paye";
@@ -41,6 +46,7 @@ export interface Database {
           category: ProductCategory;
           base_price: number;
           image_path: string | null;
+          ingredients: string | null;
           is_new: boolean;
           is_available: boolean;
           sort_order: number;
@@ -214,6 +220,35 @@ export interface Database {
           updated_at: string;
         },
         "name"
+      >;
+      categories: Table<
+        {
+          id: string;
+          slug: string;
+          label: string;
+          sort_order: number;
+          is_supplements: boolean;
+          created_at: string;
+          updated_at: string;
+        },
+        "slug" | "label"
+      >;
+      product_images: Table<
+        {
+          id: string;
+          product_id: string;
+          image_path: string;
+          sort_order: number;
+          created_at: string;
+        },
+        "product_id" | "image_path"
+      >;
+      product_supplements: Table<
+        {
+          product_id: string;
+          supplement_id: string;
+        },
+        "product_id" | "supplement_id"
       >;
       product_costs: Table<
         {
