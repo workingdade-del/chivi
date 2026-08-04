@@ -203,21 +203,7 @@ export function ProductEditor({
     const compressed = await compressImage(file, 1000).catch(() => file);
     const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_");
     const path = `${Date.now()}-${baseName}.jpg`;
-
-    // DEBUG TEMPORAIRE — diagnostic RLS persistant, à retirer une fois résolu.
-    const bucketName = "menu-images";
-    console.log("[UPLOAD DEBUG] bucket:", bucketName);
-    console.log("[UPLOAD DEBUG] path:", path);
-    console.log("[UPLOAD DEBUG] file type:", file.type, "size:", file.size);
-    console.log("[UPLOAD DEBUG] supabase client session:", await supabase.auth.getSession());
-    console.log("[UPLOAD DEBUG] supabase client user:", await supabase.auth.getUser());
-
-    const { error: upErr } = await supabase.storage.from(bucketName).upload(path, compressed, { upsert: true, contentType: "image/jpeg" });
-
-    console.log("[UPLOAD DEBUG] full error object:", JSON.stringify(upErr, null, 2));
-    console.log("[UPLOAD DEBUG] error status:", (upErr as unknown as { status?: number })?.status);
-    console.log("[UPLOAD DEBUG] error name:", upErr?.name);
-
+    const { error: upErr } = await supabase.storage.from("menu-images").upload(path, compressed, { upsert: true, contentType: "image/jpeg" });
     if (!upErr) {
       await supabase.from("products").update({ image_path: path }).eq("id", productId);
       setProduct((p) => (p ? { ...p, image_path: path } : p));
@@ -240,21 +226,7 @@ export function ProductEditor({
       const compressed = await compressImage(file, 1200).catch(() => file);
       const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_");
       const path = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${baseName}.jpg`;
-
-      // DEBUG TEMPORAIRE — diagnostic RLS persistant, à retirer une fois résolu.
-      const bucketName = "menu-images";
-      console.log("[UPLOAD DEBUG] bucket:", bucketName);
-      console.log("[UPLOAD DEBUG] path:", path);
-      console.log("[UPLOAD DEBUG] file type:", file.type, "size:", file.size);
-      console.log("[UPLOAD DEBUG] supabase client session:", await supabase.auth.getSession());
-      console.log("[UPLOAD DEBUG] supabase client user:", await supabase.auth.getUser());
-
-      const { error: upErr } = await supabase.storage.from(bucketName).upload(path, compressed, { contentType: "image/jpeg" });
-
-      console.log("[UPLOAD DEBUG] full error object:", JSON.stringify(upErr, null, 2));
-      console.log("[UPLOAD DEBUG] error status:", (upErr as unknown as { status?: number })?.status);
-      console.log("[UPLOAD DEBUG] error name:", upErr?.name);
-
+      const { error: upErr } = await supabase.storage.from("menu-images").upload(path, compressed, { contentType: "image/jpeg" });
       if (!upErr) {
         const { data: row } = await supabase
           .from("product_images")

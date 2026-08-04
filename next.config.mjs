@@ -7,6 +7,12 @@ const nextConfig = {
         hostname: "lfbkhodlmphtmizobmzv.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },
+      {
+        // chivi-test — même app Next.js déployée sur develop, backend Supabase différent.
+        protocol: "https",
+        hostname: "nlfsrhihqejbwdoxswaj.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
   experimental: {
