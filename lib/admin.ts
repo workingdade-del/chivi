@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { STATUS_LABELS } from "@/lib/order-status";
+import { loadCostMaps, summarizeMargins, marginByDish, type NamedOrderItemForMargin, type DishMarginRow } from "@/lib/margin";
 import type { OrderStatus, PaymentMethod } from "@/lib/supabase/types";
 
 export interface OrderDetailData {
@@ -66,6 +67,9 @@ export interface DashboardData {
   chart: { day: string; revenue: number }[];
   inProgress: { recue: number; en_preparation_prete: number; en_route: number };
   topDishes: { name: string; qty: number }[];
+  /** Marge plats (coûts ingrédients/emballage) — distincte de "Bénéfice" ci-dessus, qui reste basée sur les dépenses saisies manuellement. */
+  dishMarginToday: number;
+  dishMarginCoveragePct: number;
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
@@ -121,11 +125,19 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const { data: itemsToday } = await supabase
     .from("order_items")
-    .select("product_name, quantity, orders!inner(created_at)")
-    .gte("orders.created_at", today.toISOString());
+    .select("product_id, product_variant_id, product_name, variant_name, quantity, line_total, orders!inner(created_at, status)")
+    .gte("orders.created_at", today.toISOString())
+    .neq("orders.status", "annulee");
 
   const dishCounts = new Map<string, number>();
-  const todaysItems = (itemsToday ?? []) as unknown as { product_name: string; quantity: number }[];
+  const todaysItems = (itemsToday ?? []) as unknown as {
+    product_id: string | null;
+    product_variant_id: string | null;
+    product_name: string;
+    variant_name: string | null;
+    quantity: number;
+    line_total: number;
+  }[];
   for (const item of todaysItems) {
     dishCounts.set(item.product_name, (dishCounts.get(item.product_name) ?? 0) + item.quantity);
   }
@@ -134,7 +146,21 @@ export async function getDashboardData(): Promise<DashboardData> {
     .slice(0, 3)
     .map(([name, qty]) => ({ name, qty }));
 
-  return { ordersToday, revenueToday, costsToday, profitToday, marginToday, chart, inProgress, topDishes };
+  const costMaps = await loadCostMaps(supabase);
+  const dishMargin = summarizeMargins(todaysItems, costMaps);
+
+  return {
+    ordersToday,
+    revenueToday,
+    costsToday,
+    profitToday,
+    marginToday,
+    chart,
+    inProgress,
+    topDishes,
+    dishMarginToday: dishMargin.knownMargin,
+    dishMarginCoveragePct: dishMargin.coveragePct,
+  };
 }
 
 export interface AdminOrderRow {
@@ -285,6 +311,10 @@ export interface ReportData {
   profit: number;
   margin: number;
   rows: ReportRow[];
+  /** Marge plats (coûts ingrédients/emballage), recalculée en temps réel — distincte de profit/margin ci-dessus (basés sur les dépenses saisies). */
+  dishMargin: number;
+  dishMarginCoveragePct: number;
+  dishMarginRows: DishMarginRow[];
 }
 
 const DAYPARTS = [
@@ -298,11 +328,29 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
   const today = startOfDay(new Date());
   const rangeStart = period === "jour" ? today : period === "semaine" ? startOfWeek(new Date()) : startOfMonth(new Date());
 
-  const { data: orders } = await supabase
+  type PeriodOrderItem = {
+    product_id: string | null;
+    product_variant_id: string | null;
+    product_name: string;
+    variant_name: string | null;
+    quantity: number;
+    line_total: number;
+  };
+  interface PeriodOrderRow {
+    total: number;
+    delivery_fee: number;
+    created_at: string;
+    order_items: PeriodOrderItem[];
+  }
+
+  const { data: ordersRaw } = await supabase
     .from("orders")
-    .select("total, delivery_fee, created_at")
+    .select(
+      "total, delivery_fee, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
+    )
     .gte("created_at", rangeStart.toISOString())
     .neq("status", "annulee");
+  const orders = (ordersRaw ?? []) as unknown as PeriodOrderRow[];
 
   const { data: expenses } = await supabase
     .from("expenses")
@@ -314,6 +362,15 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
   const costs = (expenses ?? []).reduce((s, e) => s + e.amount, 0);
   const profit = revenue - costs;
   const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+
+  const periodItems = orders.flatMap((o) => o.order_items);
+  const costMaps = await loadCostMaps(supabase);
+  const dishMarginSummary = summarizeMargins(periodItems, costMaps);
+  const namedItems: NamedOrderItemForMargin[] = periodItems.map((item) => ({
+    ...item,
+    label: item.variant_name ? `${item.product_name} — ${item.variant_name}` : item.product_name,
+  }));
+  const dishMarginRows = marginByDish(namedItems, costMaps);
 
   let rows: ReportRow[] = [];
   let rowHead = "Période";
@@ -375,6 +432,9 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
     profit,
     margin,
     rows,
+    dishMargin: dishMarginSummary.knownMargin,
+    dishMarginCoveragePct: dishMarginSummary.coveragePct,
+    dishMarginRows,
   };
 }
 

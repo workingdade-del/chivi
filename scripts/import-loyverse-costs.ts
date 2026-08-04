@@ -175,7 +175,8 @@ function loadCsvRows(): CsvRow[] {
 interface Candidate {
   type: "product" | "variant";
   id: string;
-  name: string;
+  name: string; // nom affiché dans le rapport (nom court pour une variante)
+  matchName: string; // nom utilisé pour le score de similarité — "parent + variante" pour une variante, sinon = name
   parentName?: string; // pour les variantes, nom du plat parent (affichage rapport)
 }
 
@@ -213,13 +214,21 @@ async function main() {
   }
 
   const candidates: Candidate[] = [
-    ...(products ?? []).map((p) => ({ type: "product" as const, id: p.id, name: p.name })),
-    ...(variants ?? []).map((v) => ({
-      type: "variant" as const,
-      id: v.id,
-      name: v.name,
-      parentName: (v as unknown as { products: { name: string } | null }).products?.name,
-    })),
+    ...(products ?? []).map((p) => ({ type: "product" as const, id: p.id, name: p.name, matchName: p.name })),
+    ...(variants ?? []).map((v) => {
+      const parentName = (v as unknown as { products: { name: string } | null }).products?.name;
+      return {
+        type: "variant" as const,
+        id: v.id,
+        name: v.name,
+        // Une variante s'appelle souvent juste "Aileron"/"Poisson" en base — comparer
+        // ce nom seul fait matcher n'importe quelle ligne CSV contenant ce mot, quel
+        // que soit le plat concerné (bug corrigé ici). On compare contre "plat parent
+        // + variante" à la place, ex: "Spaghetti CHIVI Aileron".
+        matchName: parentName ? `${parentName} ${v.name}` : v.name,
+        parentName,
+      };
+    }),
   ];
 
   const matched = new Set<string>(); // "type:id" des candidats déjà retenus (score >= REPORT_THRESHOLD) par au moins une ligne CSV
@@ -230,7 +239,7 @@ async function main() {
 
     let best: { candidate: Candidate; score: number } | null = null;
     for (const candidate of candidates) {
-      const score = similarity(csvName, candidate.name);
+      const score = similarity(csvName, candidate.matchName);
       if (!best || score > best.score) best = { candidate, score };
     }
     if (best && best.score >= REPORT_THRESHOLD) {

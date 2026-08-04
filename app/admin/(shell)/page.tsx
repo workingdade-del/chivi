@@ -30,6 +30,19 @@ export default async function AdminDashboardPage() {
         />
       </div>
 
+      <div className="bg-white border border-[#ece2cd] rounded-2xl p-5 mt-4 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Marge plats (coûts ingrédients)</div>
+          <div className="font-mega text-2xl text-maroon-deep mt-1.5">{formatFcfa(data.dishMarginToday)}</div>
+          <div className="text-xs text-[#9a8b78] mt-1">Calculée en temps réel depuis les coûts renseignés dans Gestion Menu — distincte du « Bénéfice » ci-dessus, basé sur les dépenses saisies.</div>
+        </div>
+        {data.dishMarginCoveragePct < 90 && (
+          <div className="text-[13px] text-[#a6740a] bg-[#fff6e5] border-l-[3px] border-amber rounded-lg px-3.5 py-2.5 max-w-sm leading-snug">
+            ⚠️ Marge calculée sur {data.dishMarginCoveragePct}% des ventes du jour — coûts manquants pour certains plats.
+          </div>
+        )}
+      </div>
+
       <div className="grid gap-4 mt-4" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="flex items-center justify-between">
