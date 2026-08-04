@@ -5,6 +5,7 @@ import { getClientDetail } from "@/lib/admin";
 import { formatFcfa } from "@/lib/format";
 import { STATUS_LABELS } from "@/lib/order-status";
 import { ClientNameEditor } from "@/components/admin/ClientNameEditor";
+import { ClientAddressEditor } from "@/components/admin/ClientAddressEditor";
 
 export default async function AdminClientDetailPage({ params }: { params: { id: string } }) {
   const { profile, orders } = await getClientDetail(params.id);
@@ -12,6 +13,7 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
 
   const spent = orders.reduce((s, o) => s + o.total, 0);
   const name = profile.full_name || profile.whatsapp_phone;
+  const firstOrderDate = orders.length > 0 ? orders[orders.length - 1].created_at : null;
 
   return (
     <div>
@@ -36,6 +38,10 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
               label="Client depuis"
               value={new Date(profile.created_at).toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}
             />
+            <Row
+              label="Première commande"
+              value={firstOrderDate ? new Date(firstOrderDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "Aucune commande"}
+            />
           </div>
           <div className="flex gap-3 mt-4.5">
             <div className="flex-1 bg-[#faf4e8] rounded-xl p-3.5">
@@ -49,6 +55,14 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
           </div>
         </div>
 
+        <div className="flex flex-col gap-4">
+        <ClientAddressEditor
+          clientId={profile.id}
+          usualAddressText={profile.usual_address_text}
+          usualAddressLat={profile.usual_address_lat}
+          usualAddressLng={profile.usual_address_lng}
+          usualDeliveryFee={profile.usual_delivery_fee}
+        />
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="font-bold text-[15px] text-ink mb-3.5">Historique des commandes</div>
           {orders.map((o) => {
@@ -72,6 +86,7 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
             );
           })}
           {orders.length === 0 && <div className="text-center text-[#9a8b78] text-sm py-8">Aucune commande.</div>}
+        </div>
         </div>
       </div>
     </div>

@@ -32,6 +32,10 @@ export interface Database {
           address_details: string | null;
           delivery_lat: number | null;
           delivery_lng: number | null;
+          usual_address_text: string | null;
+          usual_address_lat: number | null;
+          usual_address_lng: number | null;
+          usual_delivery_fee: number | null;
           ai_active: boolean;
           created_at: string;
           updated_at: string;
@@ -325,13 +329,36 @@ export interface Database {
           delivery_lat: number | null;
           delivery_lng: number | null;
           delivery_fee: number | null;
-          status: "cart" | "awaiting_location" | "awaiting_validation" | "awaiting_payment" | "completed" | "cancelled" | "escalated" | "expired";
+          status:
+            | "cart"
+            | "awaiting_usual_address_choice"
+            | "awaiting_location"
+            | "awaiting_validation"
+            | "awaiting_payment"
+            | "completed"
+            | "cancelled"
+            | "escalated"
+            | "expired";
           location_attempts: number;
           location_inputs: unknown;
           created_at: string;
           updated_at: string;
         },
         "phone"
+      >;
+      pending_usual_address_offers: Table<
+        {
+          id: string;
+          profile_id: string | null;
+          phone: string;
+          address_text: string;
+          lat: number;
+          lng: number;
+          fee: number;
+          status: "pending" | "accepted" | "declined";
+          created_at: string;
+        },
+        "phone" | "address_text" | "lat" | "lng" | "fee"
       >;
       staff_numbers: Table<
         {

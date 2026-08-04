@@ -11,6 +11,10 @@ import {
   PAYMENT_MOMO_AVANCE_BUTTON_ID,
   LOCATION_CONFIRM_BUTTON_ID,
   LOCATION_REJECT_BUTTON_ID,
+  USUAL_ADDRESS_YES_BUTTON_ID,
+  USUAL_ADDRESS_NO_BUTTON_ID,
+  USUAL_ADDRESS_SAVE_YES_BUTTON_ID,
+  USUAL_ADDRESS_SAVE_NO_BUTTON_ID,
   buildPauseAutoReply,
   buildPostDeliveryFeedbackMessage,
   buildDeliveryFeeConfirmedMessage,
@@ -45,10 +49,13 @@ import {
   getAwaitingLocationFlowToken,
   expireStalePendingConfirmation,
   cancelPendingLocationConfirmations,
+  handleUsualAddressSaveReply,
 } from "@/lib/location-confirmation";
 import {
   handleOrderValidationReply,
   handlePaymentMethodReply,
+  handleUsualAddressChoiceReply,
+  sendUsualAddressChoicePrompt,
   getActiveFlowSession,
   cancelActiveFlowSessions,
   handleFlowRestart,
@@ -342,7 +349,7 @@ async function handleFlowTrigger(profileId: string | null, phone: string) {
  * "awaiting_location" pour que le prochain message de ce client soit
  * traité comme sa position de livraison plutôt qu'une conversation IA.
  */
-async function handleFlowCompletion(phone: string, nfmReply: { response_json: string }) {
+async function handleFlowCompletion(phone: string, profileId: string | null, nfmReply: { response_json: string }) {
   try {
     const responseData = JSON.parse(nfmReply.response_json) as { flow_token?: string };
 
@@ -365,6 +372,27 @@ async function handleFlowCompletion(phone: string, nfmReply: { response_json: st
     if (!flowToken) {
       console.warn("[whatsapp-webhook] flow completion but no flow_session found", { phone });
       return;
+    }
+
+    // Adresse habituelle complète (texte + tarif + coordonnées) enregistrée
+    // pour ce client ? Si oui, on propose le raccourci avant de redemander
+    // la position — sinon parcours normal inchangé.
+    if (profileId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("usual_address_text, usual_address_lat, usual_address_lng, usual_delivery_fee")
+        .eq("id", profileId)
+        .maybeSingle();
+
+      if (
+        profile?.usual_address_text &&
+        profile.usual_address_lat !== null &&
+        profile.usual_address_lng !== null &&
+        profile.usual_delivery_fee !== null
+      ) {
+        await sendUsualAddressChoicePrompt(flowToken, phone, profile.usual_address_text, profile.usual_delivery_fee);
+        return;
+      }
     }
 
     await supabase.from("flow_sessions").update({ status: "awaiting_location" }).eq("flow_token", flowToken);
@@ -902,7 +930,7 @@ export async function POST(req: NextRequest) {
           );
         } else if (message.type === "interactive" && message.interactive?.type === "nfm_reply" && message.interactive.nfm_reply) {
           console.log("[whatsapp-webhook] WhatsApp Flow completed", { profileId: profile?.id });
-          await handleFlowCompletion(phone, message.interactive.nfm_reply);
+          await handleFlowCompletion(phone, profile?.id ?? null, message.interactive.nfm_reply);
         } else if (
           message.type === "interactive" &&
           message.interactive?.type === "button_reply" &&
@@ -917,6 +945,27 @@ export async function POST(req: NextRequest) {
           } else {
             await handleLocationRejectButtonReply(phone);
           }
+        } else if (
+          message.type === "interactive" &&
+          message.interactive?.type === "button_reply" &&
+          (message.interactive.button_reply?.id === USUAL_ADDRESS_YES_BUTTON_ID || message.interactive.button_reply?.id === USUAL_ADDRESS_NO_BUTTON_ID)
+        ) {
+          console.log("[whatsapp-webhook] customer replying to usual address shortcut", {
+            profileId: profile?.id,
+            buttonId: message.interactive.button_reply?.id,
+          });
+          await handleUsualAddressChoiceReply(phone, message.interactive.button_reply!.id);
+        } else if (
+          message.type === "interactive" &&
+          message.interactive?.type === "button_reply" &&
+          (message.interactive.button_reply?.id === USUAL_ADDRESS_SAVE_YES_BUTTON_ID ||
+            message.interactive.button_reply?.id === USUAL_ADDRESS_SAVE_NO_BUTTON_ID)
+        ) {
+          console.log("[whatsapp-webhook] customer replying to save-usual-address offer", {
+            profileId: profile?.id,
+            buttonId: message.interactive.button_reply?.id,
+          });
+          await handleUsualAddressSaveReply(phone, message.interactive.button_reply!.id === USUAL_ADDRESS_SAVE_YES_BUTTON_ID);
         } else if (
           message.type === "interactive" &&
           message.interactive?.type === "button_reply" &&

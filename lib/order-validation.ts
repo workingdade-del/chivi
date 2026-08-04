@@ -4,14 +4,18 @@ import {
   sendWhatsappText,
   sendOrderRecapButtons,
   sendPaymentMethodButtons,
+  sendUsualAddressChoiceButtons,
   buildOrderRecapMessage,
   buildOrderCancelledByCustomerMessage,
+  buildLocationRequestMessage,
   extractMessageId,
   ORDER_VALIDATE_BUTTON_ID,
   ORDER_CANCEL_BUTTON_ID,
   PAYMENT_CASH_BUTTON_ID,
   PAYMENT_MOMO_LIVRAISON_BUTTON_ID,
   PAYMENT_MOMO_AVANCE_BUTTON_ID,
+  USUAL_ADDRESS_YES_BUTTON_ID,
+  USUAL_ADDRESS_NO_BUTTON_ID,
 } from "@/lib/whatsapp";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
@@ -23,8 +27,14 @@ import type { PaymentMethod } from "@/lib/supabase/types";
  * ne matchait aucune branche du webhook et fuyait vers handleAiReply, qui
  * perdait tout le contexte de commande).
  */
-export type ActiveFlowStatus = "cart" | "awaiting_location" | "awaiting_validation" | "awaiting_payment";
-const ACTIVE_STATUSES: ActiveFlowStatus[] = ["cart", "awaiting_location", "awaiting_validation", "awaiting_payment"];
+export type ActiveFlowStatus = "cart" | "awaiting_usual_address_choice" | "awaiting_location" | "awaiting_validation" | "awaiting_payment";
+const ACTIVE_STATUSES: ActiveFlowStatus[] = [
+  "cart",
+  "awaiting_usual_address_choice",
+  "awaiting_location",
+  "awaiting_validation",
+  "awaiting_payment",
+];
 
 /** Au-delà de cette inactivité, une session active est considérée abandonnée et n'a plus le droit d'intercepter les messages du client — voir expireStaleFlowSession. */
 const STALE_SESSION_MINUTES = 30;
@@ -152,6 +162,14 @@ export async function handleUnexpectedFlowMessage(phone: string, text: string, s
     return;
   }
 
+  if (status === "awaiting_usual_address_choice") {
+    await sendGuardrailMessage(
+      phone,
+      "Merci d'utiliser les boutons ci-dessus 👆 pour choisir ton adresse de livraison, ou réponds RECOMMENCER pour repartir de zéro."
+    );
+    return;
+  }
+
   if (status === "awaiting_payment") {
     await sendGuardrailMessage(
       phone,
@@ -209,6 +227,108 @@ export async function getAwaitingPaymentFlowToken(phone: string): Promise<string
     .limit(1)
     .maybeSingle();
   return data?.flow_token ?? null;
+}
+
+/** Une session Flow attend-elle le choix "adresse habituelle ?" ? */
+export async function getAwaitingUsualAddressChoiceFlowToken(phone: string): Promise<string | null> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("flow_sessions")
+    .select("flow_token")
+    .eq("phone", phone)
+    .eq("status", "awaiting_usual_address_choice")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.flow_token ?? null;
+}
+
+/**
+ * Juste après la fin du Flow menu, avant de demander la position : si le
+ * client a une adresse habituelle complète (texte + tarif + coordonnées),
+ * on lui propose le raccourci plutôt que d'enchaîner directement sur
+ * awaiting_location. Appelé uniquement quand ces 4 champs sont tous
+ * renseignés (vérifié par l'appelant, voir handleFlowCompletion).
+ */
+export async function sendUsualAddressChoicePrompt(
+  flowToken: string,
+  phone: string,
+  addressText: string,
+  fee: number
+): Promise<void> {
+  const supabase = createServiceClient();
+  await supabase.from("flow_sessions").update({ status: "awaiting_usual_address_choice" }).eq("flow_token", flowToken);
+  console.log("[order-validation] transition cart -> awaiting_usual_address_choice", { flowToken, phone });
+  try {
+    await sendUsualAddressChoiceButtons(phone, addressText, fee);
+  } catch (err) {
+    console.error("[order-validation] failed to send usual address choice buttons", err);
+  }
+}
+
+/** Le client répond au raccourci "adresse habituelle ?" (boutons Oui/Non). */
+export async function handleUsualAddressChoiceReply(phone: string, buttonId: string): Promise<void> {
+  const flowToken = await getAwaitingUsualAddressChoiceFlowToken(phone);
+  if (!flowToken) {
+    console.warn("[order-validation] usual address button clicked but no awaiting_usual_address_choice session found", { phone });
+    return;
+  }
+
+  const supabase = createServiceClient();
+
+  if (buttonId === USUAL_ADDRESS_NO_BUTTON_ID) {
+    await supabase.from("flow_sessions").update({ status: "awaiting_location" }).eq("flow_token", flowToken);
+    console.log("[order-validation] transition awaiting_usual_address_choice -> awaiting_location", { flowToken, phone });
+    try {
+      await sendWhatsappText(phone, buildLocationRequestMessage());
+    } catch (err) {
+      console.error("[order-validation] failed to send location request message", err);
+    }
+    return;
+  }
+
+  if (buttonId === USUAL_ADDRESS_YES_BUTTON_ID) {
+    const { data: session } = await supabase.from("flow_sessions").select("cart, profile_id").eq("flow_token", flowToken).maybeSingle();
+    if (!session?.profile_id) {
+      console.warn("[order-validation] usual address confirmed but session/profile missing", { flowToken });
+      return;
+    }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("usual_address_text, usual_address_lat, usual_address_lng, usual_delivery_fee")
+      .eq("id", session.profile_id)
+      .maybeSingle();
+
+    if (
+      !profile?.usual_address_text ||
+      profile.usual_address_lat === null ||
+      profile.usual_address_lng === null ||
+      profile.usual_delivery_fee === null
+    ) {
+      console.warn("[order-validation] usual address incomplete at confirmation time, falling back to normal flow", { flowToken });
+      await supabase.from("flow_sessions").update({ status: "awaiting_location" }).eq("flow_token", flowToken);
+      try {
+        await sendWhatsappText(phone, buildLocationRequestMessage());
+      } catch (err) {
+        console.error("[order-validation] failed to send location request message", err);
+      }
+      return;
+    }
+
+    console.log("[order-validation] transition awaiting_usual_address_choice -> awaiting_validation (raccourci adresse habituelle)", {
+      flowToken,
+      phone,
+    });
+    await sendOrderRecap(
+      flowToken,
+      phone,
+      session.cart as unknown as FlowCartState,
+      profile.usual_address_text,
+      profile.usual_address_lat,
+      profile.usual_address_lng,
+      profile.usual_delivery_fee
+    );
+  }
 }
 
 /**

@@ -8,6 +8,7 @@ import { sendAdminLocationEscalationNotification } from "@/lib/email";
 import {
   sendWhatsappText,
   sendLocationConfirmationButtons,
+  sendSaveUsualAddressButtons,
   buildLocationNotFoundMessage,
   buildLocationRejectionPromptMessage,
   buildDeliveryFeeMessage,
@@ -215,6 +216,7 @@ async function applyDeliveryFee(
       return;
     }
     await sendOrderRecap(flowToken, phone, session.cart as unknown as FlowCartState, address, lat, lng, fee);
+    await maybeOfferSaveAsUsualAddress(profileId, phone, address, lat, lng, fee);
     return;
   }
 
@@ -222,6 +224,35 @@ async function applyDeliveryFee(
     await sendWhatsappText(phone, buildDeliveryFeeMessage(distanceKm, fee));
   } catch (err) {
     console.error("[location-confirmation] failed to send delivery fee message", err);
+  }
+}
+
+/**
+ * Après confirmation d'une adresse en plein flow de commande : si elle
+ * diffère de l'adresse habituelle actuelle du client (ou qu'aucune n'est
+ * encore enregistrée), propose de la mémoriser comme nouvelle adresse
+ * habituelle. Gérée par clic bouton uniquement (voir migration 0040) —
+ * n'interfère jamais avec la confirmation en texte libre du récapitulatif
+ * qui arrive juste après.
+ */
+async function maybeOfferSaveAsUsualAddress(
+  profileId: string | null,
+  phone: string,
+  address: string,
+  lat: number,
+  lng: number,
+  fee: number
+): Promise<void> {
+  if (!profileId) return;
+  const supabase = createServiceClient();
+  const { data: profile } = await supabase.from("profiles").select("usual_address_text").eq("id", profileId).maybeSingle();
+  if (profile?.usual_address_text === address) return;
+
+  await supabase.from("pending_usual_address_offers").insert({ profile_id: profileId, phone, address_text: address, lat, lng, fee });
+  try {
+    await sendSaveUsualAddressButtons(phone);
+  } catch (err) {
+    console.error("[location-confirmation] failed to send save-usual-address buttons", err);
   }
 }
 
@@ -418,5 +449,59 @@ export async function handleLocationRejectButtonReply(phone: string): Promise<vo
     await sendWhatsappText(phone, buildLocationRejectionPromptMessage());
   } catch (err) {
     console.error("[location-confirmation] failed to send rejection prompt", err);
+  }
+}
+
+/** Y a-t-il une offre "mémoriser cette adresse ?" en attente pour ce numéro ? */
+export async function getPendingUsualAddressOfferId(phone: string): Promise<string | null> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("pending_usual_address_offers")
+    .select("id")
+    .eq("phone", phone)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+/** Le client clique "✅ Oui" ou "❌ Non merci" sur l'offre de mémorisation d'adresse habituelle. */
+export async function handleUsualAddressSaveReply(phone: string, accepted: boolean): Promise<void> {
+  const offerId = await getPendingUsualAddressOfferId(phone);
+  if (!offerId) {
+    console.warn("[location-confirmation] usual-address save button clicked but no pending offer found", { phone });
+    return;
+  }
+
+  const supabase = createServiceClient();
+  const { data: offer } = await supabase
+    .from("pending_usual_address_offers")
+    .select("profile_id, address_text, lat, lng, fee")
+    .eq("id", offerId)
+    .maybeSingle();
+
+  await supabase
+    .from("pending_usual_address_offers")
+    .update({ status: accepted ? "accepted" : "declined" })
+    .eq("id", offerId);
+
+  if (!accepted || !offer?.profile_id) return;
+
+  await supabase
+    .from("profiles")
+    .update({
+      usual_address_text: offer.address_text,
+      usual_address_lat: offer.lat,
+      usual_address_lng: offer.lng,
+      usual_delivery_fee: offer.fee,
+    })
+    .eq("id", offer.profile_id);
+
+  console.log("[location-confirmation] adresse habituelle mémorisée", { phone, profileId: offer.profile_id });
+  try {
+    await sendWhatsappText(phone, "C'est noté ! 📍 On utilisera cette adresse par défaut la prochaine fois.");
+  } catch (err) {
+    console.error("[location-confirmation] failed to send save-confirmation message", err);
   }
 }

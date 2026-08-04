@@ -250,6 +250,86 @@ export async function sendLocationConfirmationButtons(to: string, address: strin
   return res.json();
 }
 
+export const USUAL_ADDRESS_YES_BUTTON_ID = "usual_address_yes";
+export const USUAL_ADDRESS_NO_BUTTON_ID = "usual_address_no";
+
+export function buildUsualAddressChoiceMessage(addressText: string, fee: number): string {
+  return `📍 Souhaitez-vous être livré à votre adresse habituelle (${addressText}) ?\nFrais de livraison : ${fee.toLocaleString("fr-FR")} FCFA`;
+}
+
+/** Raccourci proposé en tout début de commande quand le client a une adresse habituelle mémorisée avec tarif — évite de repasser par la détection Nominatim. */
+export async function sendUsualAddressChoiceButtons(to: string, addressText: string, fee: number) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: buildUsualAddressChoiceMessage(addressText, fee) },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: USUAL_ADDRESS_YES_BUTTON_ID, title: "✅ Oui, même adresse" } },
+            { type: "reply", reply: { id: USUAL_ADDRESS_NO_BUTTON_ID, title: "📍 Non, nouvelle adresse" } },
+          ],
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
+export const USUAL_ADDRESS_SAVE_YES_BUTTON_ID = "usual_address_save_yes";
+export const USUAL_ADDRESS_SAVE_NO_BUTTON_ID = "usual_address_save_no";
+
+export function buildSaveUsualAddressMessage(): string {
+  return "Voulez-vous que je mémorise cette adresse comme votre adresse habituelle pour vos prochaines commandes ?";
+}
+
+/** Proposé après confirmation d'une nouvelle adresse différente de l'habituelle (ou si aucune n'est encore enregistrée). */
+export async function sendSaveUsualAddressButtons(to: string) {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId()}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: normalizePhone(to),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: buildSaveUsualAddressMessage() },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: USUAL_ADDRESS_SAVE_YES_BUTTON_ID, title: "✅ Oui" } },
+            { type: "reply", reply: { id: USUAL_ADDRESS_SAVE_NO_BUTTON_ID, title: "❌ Non merci" } },
+          ],
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`WhatsApp send failed (${res.status}): ${detail}`);
+  }
+
+  return res.json();
+}
+
 export function buildLocationRejectionPromptMessage(): string {
   return "D'accord 🙏 Décris-moi plus précisément l'endroit (texte ou message vocal), ou envoie directement ta position (📎 → Localisation).";
 }
