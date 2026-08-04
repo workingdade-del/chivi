@@ -31,18 +31,26 @@ export interface CostMaps {
 
 export async function loadCostMaps(client?: SupabaseClient<Database>): Promise<CostMaps> {
   const supabase = client ?? createServiceClient();
-  const [{ data: productCosts }, { data: variantCosts }] = await Promise.all([
+  const [{ data: productCosts, error: productCostsErr }, { data: variantCosts, error: variantCostsErr }] = await Promise.all([
     supabase.from("product_costs").select("product_id, ingredient_cost, packaging_cost"),
     supabase.from("product_variants").select("id, ingredient_cost, packaging_cost"),
   ]);
+  if (productCostsErr) console.error("[margin] échec lecture product_costs :", productCostsErr.message);
+  if (variantCostsErr) console.error("[margin] échec lecture product_variants :", variantCostsErr.message);
 
+  // product_costs.ingredient_cost/packaging_cost sont des colonnes "numeric"
+  // Postgres — PostgREST les sérialise en CHAÎNES (pas en nombre JSON) pour
+  // éviter toute perte de précision flottante. Sans ce Number(...), "700" +
+  // "50" fait une concaténation de chaînes ("70050") au lieu d'une addition.
+  // product_variants utilise des colonnes "integer" (migration 0038), déjà
+  // des nombres — Number() dessus est un no-op inoffensif.
   const products = new Map<string, CostRow>();
   for (const row of productCosts ?? []) {
-    products.set(row.product_id, { ingredient_cost: row.ingredient_cost, packaging_cost: row.packaging_cost });
+    products.set(row.product_id, { ingredient_cost: Number(row.ingredient_cost), packaging_cost: Number(row.packaging_cost) });
   }
   const variants = new Map<string, CostRow>();
   for (const row of variantCosts ?? []) {
-    variants.set(row.id, { ingredient_cost: row.ingredient_cost, packaging_cost: row.packaging_cost });
+    variants.set(row.id, { ingredient_cost: Number(row.ingredient_cost), packaging_cost: Number(row.packaging_cost) });
   }
   return { products, variants };
 }
@@ -59,8 +67,22 @@ export function computeItemMargin(item: OrderItemForMargin, costs: CostMaps): It
   let unitCost: number | null = null;
 
   if (item.product_variant_id) {
-    const row = costs.variants.get(item.product_variant_id);
-    unitCost = row ? row.ingredient_cost + row.packaging_cost : 0;
+    const variantRow = costs.variants.get(item.product_variant_id);
+    const variantCost = variantRow ? variantRow.ingredient_cost + variantRow.packaging_cost : 0;
+    if (variantCost > 0) {
+      unitCost = variantCost;
+    } else if (item.product_id) {
+      // La variante n'a pas (encore) son propre coût renseigné — en
+      // pratique le staff renseigne le plus souvent le coût au niveau du
+      // plat (Gestion Menu) et laisse les champs de coût par variante à 0.
+      // Retomber sur product_costs du plat parent évite de déclarer
+      // "coût non renseigné" alors qu'un coût existe bel et bien, juste
+      // pas au niveau le plus spécifique.
+      const productRow = costs.products.get(item.product_id);
+      unitCost = productRow ? productRow.ingredient_cost + productRow.packaging_cost : 0;
+    } else {
+      unitCost = 0;
+    }
   } else if (item.product_id) {
     const row = costs.products.get(item.product_id);
     unitCost = row ? row.ingredient_cost + row.packaging_cost : 0;

@@ -1,0 +1,122 @@
+======================================================================
+Import coûts Loyverse — MODE APPLY (écriture réelle)
+Généré le 04/08/2026 23:19:36
+======================================================================
+
+Lignes CSV "NOS PRODUITS" : 58
+Lignes CSV "STOCKS" (ignorées pour le matching) : 20
+Produits en base : 21 — Variantes en base : 39
+
+--- CORRESPONDANCES HAUTE CONFIANCE (score >= 0.8) — 13 ---
+(appliquées ci-dessous)
+  [0.90] "Alloco Aileron" → Aileron (variante de Portion Alloco) — coût: 1527 FCFA
+  [0.84] "Atcheke avec gros poisson coupe" → gros poisson coupe (variante de Atchèkè CHIVI) — coût: 956 FCFA
+  [0.80] "Atcheke Cuisse de poulet" → Cuisse de poulet (variante de Atchèkè CHIVI) — coût: 1384 FCFA
+  [0.83] "Atcheke Poisson Silivi Complet" → Poisson Silivi Complet (variante de Atchèkè CHIVI) — coût: 1184 FCFA
+  [0.87] "Couscous sauce marocaine Aileron Saucisse" → sauce marocaine Aileron Saucisse (variante de Couscous CHIVI) — coût: 1757 FCFA
+  [0.90] "Cuisse de poulet" → Cuisse de poulet (variante de Atchèkè CHIVI) — coût: 600 FCFA
+  [1.00] "Gboman avec Kpanman, fromage, Goussi et Poisson" → Gboman avec Kpanman, fromage, Goussi et Poisson — coût: 1767 FCFA
+  [1.00] "Jus Akassa Aileron" → Aileron (variante de Jus Akassa) — coût: 1550 FCFA
+  [1.00] "Jus Akassa Poisson Bar" → Poisson Bar (variante de Jus Akassa) — coût: 1300 FCFA
+  [1.00] "Jus Akassa Silivi" → Silivi (variante de Jus Akassa) — coût: 1300 FCFA
+  [0.81] "Jus Bissap 0,5L" → Jus Bissap 500ml — coût: 157 FCFA
+  [0.88] "Portion D'Alloco" → Portion Alloco — coût: 168 FCFA
+  [0.90] "Poulet Mayo" → Poulet mayo (variante de Atchèkè CHIVI) — coût: 1060 FCFA
+
+--- À VÉRIFIER MANUELLEMENT (score entre 0.4 et 0.8) — 39 ---
+  [0.58] "Atassi 1000F" → Atassi CHIVI ? — coût: 757 FCFA
+  [0.53] "Atassi 1200 poisson, Fromage, Oeuf" → Poisson Complet (variante de Atassi CHIVI) ? — coût: 822 FCFA
+  [0.70] "Atassi Aileron" → Aileron (variante de Atassi CHIVI) ? — coût: 1590 FCFA
+  [0.77] "Atassi Aileron Demi poisson oeuf fromage" → Aileron, demi poisson, œuf, fromage (variante de Atassi CHIVI) ? — coût: 1784 FCFA
+  [0.67] "Atassi cuisse de poulet" → Cuisse de poulet (variante de Atchèkè CHIVI) ? — coût: 1584 FCFA
+  [0.79] "Atassi Poisson complet" → Poisson Complet (variante de Atassi CHIVI) ? — coût: 1250 FCFA
+  [0.71] "Atcheke Aileron" → Aileron (variante de Atchèkè CHIVI) ? — coût: 1584 FCFA
+  [0.77] "Atcheke demi poisson" → demi poisson (variante de Atchèkè CHIVI) ? — coût: 773 FCFA
+  [0.56] "Atcheke Poisson Bar 2000" → Poisson Bar (variante de Atchèkè CHIVI) ? — coût: 1406 FCFA
+  [0.76] "Atcheke poulet mayo" → Poulet mayo (variante de Atchèkè CHIVI) ? — coût: 1816 FCFA
+  [0.60] "Frite Alloco cuisse de poulet" → Cuisse de poulet (variante de Frites & Alloco CHIVI + Poisson) ? — coût: 1359 FCFA
+  [0.60] "Frite Alloco Poisson Braisée" → Poisson Braisée (variante de Frites & Alloco CHIVI + Poisson) ? — coût: 1167 FCFA
+  [0.60] "Frite Alloco Viande de Mouton" → Viande de Mouton (variante de Frites & Alloco CHIVI + Poisson) ? — coût: 0 FCFA
+  [0.73] "Frites Alloco Aileron" → Aileron (variante de Portion Alloco) ? — coût: 1567 FCFA
+  [0.68] "Frites Alloco Poisson" → Frites & Alloco CHIVI + Poisson ? — coût: 1167 FCFA
+  [0.46] "Frites Alloco Poulet Mayo Chivi" → Poisson (variante de Frites & Alloco CHIVI + Poisson) ? — coût: 1727 FCFA
+  [0.50] "Jus d'ananas" → Jus Ananas 500ml ? — coût: 340 FCFA
+  [0.50] "Jus de pastèque" → Jus Pastèque 500ml ? — coût: 490 FCFA
+  [0.52] "Monyo Aileron" → Piron rouge + Aileron ? — coût: 1320 FCFA
+  [0.55] "Monyo Poisson Bar" → Poisson Bar (variante de Jus Akassa) ? — coût: 1070 FCFA
+  [0.61] "Monyo Poisson Silivi" → Monyo + 2 Akassa + Poisson Silivi ? — coût: 1020 FCFA
+  [0.63] "Pâte rouge avec Jus et Aileron" → Pâte rouge + Aileron ? — coût: 1445 FCFA
+  [0.77] "Piron rouge Jus et Aileron" → Piron rouge + Aileron ? — coût: 1445 FCFA
+  [0.48] "Plat spaghetti aileron oeuf" → Pâte rouge + Aileron ? — coût: 0 FCFA
+  [0.40] "Portion Couscous avec sauce et saucisse" → sauce marocaine Aileron Saucisse (variante de Couscous CHIVI) ? — coût: 857 FCFA
+  [0.47] "Portion de frites" → Portion Alloco ? — coût: 342 FCFA
+  [0.48] "Portion de pâte rouge" → Portion Alloco ? — coût: 0 FCFA
+  [0.47] "Riz au curry jus poulet mayo" → Poulet mayo (variante de Frites & Alloco CHIVI + Poisson) ? — coût: 1601 FCFA
+  [0.57] "Riz gras avec Aileron" → Aileron (variante de Jus Akassa) ? — coût: 1761 FCFA
+  [0.57] "Riz gras avec Cuisse de poulet" → Cuisse de poulet (variante de Atchèkè CHIVI) ? — coût: 1561 FCFA
+  [0.75] "Riz gras oeuf poisson bar" → Riz gras CHIVI + Poisson Bar ? — coût: 1611 FCFA
+  [0.71] "Riz gras poisson Bar" → Riz gras CHIVI + Poisson Bar ? — coût: 1511 FCFA
+  [0.55] "Riz gras poisson Silivi" → Monyo + 2 Akassa + Poisson Silivi ? — coût: 1124 FCFA
+  [0.67] "Spaghetti 🍝" → Spaghetti CHIVI ? — coût: 800 FCFA
+  [0.78] "Spaghetti 🍝 Aileron" → Aileron (variante de Spaghetti CHIVI) ? — coût: 1550 FCFA
+  [0.57] "Tchayo Poisson" → Tchayo CHIVI ? — coût: 1730 FCFA
+  [0.67] "Tchep Poisson Légumes" → Tchep aux légumes ? — coût: 1625 FCFA
+  [0.75] "Tchep Viande Légumes" → Tchep aux légumes ? — coût: 2157 FCFA
+  [0.62] "Tchep viande poisson" → demi poisson (variante de Atchèkè CHIVI) ? — coût: 2824 FCFA
+
+--- AUCUNE CORRESPONDANCE (score < 0.4) — 6 ---
+  "Ajout 100" — coût: 0 FCFA — à faire correspondre manuellement
+  "Haricot 1000f" — coût: 745 FCFA — à faire correspondre manuellement
+  "Haricots 1500" — coût: 1111 FCFA — à faire correspondre manuellement
+  "Poisson frit" — coût: 0 FCFA — à faire correspondre manuellement
+  "Poulet DG+Riz" — coût: 0 FCFA — à faire correspondre manuellement
+  "Variable" — coût: 0 FCFA — à faire correspondre manuellement
+
+--- PRODUITS/VARIANTES EN BASE SANS CORRESPONDANCE CSV — 25 ---
+  Gboman CHIVI
+  Jus + 2 Akassa + Poisson Bar
+  Atchèkè CHIVI
+  Couscous CHIVI
+  Haricot gras + Gésier & Gari
+  Riz blanc CHIVI + Poulet DG
+  Jus Akassa
+  Silivi complet (variante de Atchèkè CHIVI)
+  Complet (demi poisson, œuf, fromage) (variante de Atassi CHIVI)
+  Cuisse, poisson, œuf, fromage (variante de Atassi CHIVI)
+  Demi poisson & alloco (variante de Haricot gras + Gésier & Gari)
+  Aileron (variante de Frites & Alloco CHIVI + Poisson)
+  Grand (variante de Riz gras CHIVI + Poisson Bar)
+  Très grand (variante de Riz gras CHIVI + Poisson Bar)
+  + Aileron (variante de Riz gras CHIVI + Poisson Bar)
+  + Cuisse (variante de Riz gras CHIVI + Poisson Bar)
+  Pâte noire (variante de Gboman CHIVI)
+  Pâte blanche (variante de Gboman CHIVI)
+  Pâte noire (variante de Tchayo CHIVI)
+  Pâte blanche (variante de Tchayo CHIVI)
+  Viande (variante de Tchep aux légumes)
+  Mix (poisson & viande) (variante de Tchep aux légumes)
+  Poisson Bar (variante de Monyo + 2 Akassa + Poisson Silivi)
+  Aileron (variante de Monyo + 2 Akassa + Poisson Silivi)
+  Aileron (variante de Jus + 2 Akassa + Poisson Bar)
+
+--- LIGNES "STOCKS" (référence, non utilisées pour le matching) — 20 ---
+  Accompagnement Gari pour Atassi — coût unitaire: 50
+  Aileron — coût unitaire: 615
+  Boîte Piment — coût unitaire: 12
+  Cuillère — coût unitaire: 15
+  Cuisse de poulet — coût unitaire: 482
+  Emballage sachet — coût unitaire: 30
+  Friture Attassi — coût unitaire: 100
+  Fromage Atassi — coût unitaire: 65
+  Haricots — coût unitaire: 50
+  Huile d’arachide d’Agonlin — coût unitaire: 31000
+  Oeuf — coût unitaire: 90
+  Piment accompagnement — coût unitaire: 14
+  Plat emporté pour Riz — coût unitaire: 130
+  Poisson Bar — coût unitaire: 715
+  Poisson Silivi — coût unitaire: 0
+  Riz — coût unitaire: 0
+  Riz portion — coût unitaire: 200
+  Saucisses — coût unitaire: 72
+  Silivi — coût unitaire: 402
+  Spaghetti — coût unitaire: 375

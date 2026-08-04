@@ -41,21 +41,39 @@ export interface ClientOrderRow {
   order_items: { quantity: number }[];
 }
 
+// CHIVI opère à Cotonou (UTC+1, fixe — pas de DST) mais les fonctions
+// serverless (Vercel) tournent en UTC par défaut : un simple
+// `.setHours(0,0,0,0)` calcule "minuit" dans le fuseau du SERVEUR, pas celui
+// de Cotonou — décalage d'une heure sur la frontière du jour, qui peut faire
+// classer une commande dans le mauvais jour/période. On convertit vers une
+// vue "horloge murale Cotonou" (lisible avec les getters UTC quel que soit
+// le fuseau du serveur), on fait les calculs de calendrier dessus, puis on
+// reconvertit en instant UTC réel.
+const COTONOU_OFFSET_MS = 60 * 60 * 1000;
+function toCotonouWallClock(d: Date): Date {
+  return new Date(d.getTime() + COTONOU_OFFSET_MS);
+}
+function fromCotonouWallClock(d: Date): Date {
+  return new Date(d.getTime() - COTONOU_OFFSET_MS);
+}
+
 function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+  const wall = toCotonouWallClock(d);
+  wall.setUTCHours(0, 0, 0, 0);
+  return fromCotonouWallClock(wall);
 }
 function startOfWeek(d: Date) {
-  const x = startOfDay(d);
-  const day = x.getDay() === 0 ? 7 : x.getDay(); // lundi = 1
-  x.setDate(x.getDate() - (day - 1));
-  return x;
+  const wall = toCotonouWallClock(d);
+  wall.setUTCHours(0, 0, 0, 0);
+  const day = wall.getUTCDay() === 0 ? 7 : wall.getUTCDay(); // lundi = 1
+  wall.setUTCDate(wall.getUTCDate() - (day - 1));
+  return fromCotonouWallClock(wall);
 }
 function startOfMonth(d: Date) {
-  const x = startOfDay(d);
-  x.setDate(1);
-  return x;
+  const wall = toCotonouWallClock(d);
+  wall.setUTCHours(0, 0, 0, 0);
+  wall.setUTCDate(1);
+  return fromCotonouWallClock(wall);
 }
 
 export interface DashboardData {
@@ -123,11 +141,12 @@ export async function getDashboardData(): Promise<DashboardData> {
     en_route: (activeOrders ?? []).filter((o) => o.status === "en_route").length,
   };
 
-  const { data: itemsToday } = await supabase
+  const { data: itemsToday, error: itemsTodayErr } = await supabase
     .from("order_items")
     .select("product_id, product_variant_id, product_name, variant_name, quantity, line_total, orders!inner(created_at, status)")
     .gte("orders.created_at", today.toISOString())
     .neq("orders.status", "annulee");
+  if (itemsTodayErr) console.error("[dashboard] échec lecture order_items du jour :", itemsTodayErr.message);
 
   const dishCounts = new Map<string, number>();
   const todaysItems = (itemsToday ?? []) as unknown as {
@@ -343,19 +362,21 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
     order_items: PeriodOrderItem[];
   }
 
-  const { data: ordersRaw } = await supabase
+  const { data: ordersRaw, error: ordersErr } = await supabase
     .from("orders")
     .select(
       "total, delivery_fee, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
     )
     .gte("created_at", rangeStart.toISOString())
     .neq("status", "annulee");
+  if (ordersErr) console.error("[report] échec lecture orders de la période :", ordersErr.message);
   const orders = (ordersRaw ?? []) as unknown as PeriodOrderRow[];
 
-  const { data: expenses } = await supabase
+  const { data: expenses, error: expensesErr } = await supabase
     .from("expenses")
     .select("amount, expense_date")
     .gte("expense_date", rangeStart.toISOString().slice(0, 10));
+  if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
 
   const revenue = (orders ?? []).reduce((s, o) => s + o.total, 0);
   const deliveryCosts = (orders ?? []).reduce((s, o) => s + o.delivery_fee, 0);
