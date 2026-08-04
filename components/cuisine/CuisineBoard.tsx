@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { NEXT_STATUS } from "@/lib/order-status";
 import { CancelOrderModal } from "@/components/shared/CancelOrderModal";
+import { showToast } from "@/components/shared/Toast";
 import type { OrderStatus } from "@/lib/supabase/types";
 
 interface TicketItem {
@@ -66,6 +67,7 @@ export function CuisineBoard() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [cancelTicket, setCancelTicket] = useState<Ticket | null>(null);
+  const [advancingId, setAdvancingId] = useState<string | null>(null);
 
   const fetchTickets = useCallback(async () => {
     const supabase = createClient();
@@ -99,8 +101,14 @@ export function CuisineBoard() {
   }, []);
 
   async function advance(id: string, status: OrderStatus) {
+    setAdvancingId(id);
     const supabase = createClient();
-    await supabase.from("orders").update({ status: NEXT_STATUS[status] }).eq("id", id);
+    const { error } = await supabase.from("orders").update({ status: NEXT_STATUS[status] }).eq("id", id);
+    setAdvancingId(null);
+    if (error) {
+      showToast(`Échec : ${error.message}`, "error");
+      return;
+    }
     if (openId === id && NEXT_STATUS[status] !== "prete") setOpenId(null);
   }
 
@@ -205,7 +213,8 @@ export function CuisineBoard() {
                   )}
                   <button
                     onClick={() => advance(t.id, t.status)}
-                    className="mt-1 w-full min-h-[48px] py-[15px] rounded-xl font-bold text-[.98em]"
+                    disabled={advancingId === t.id}
+                    className="mt-1 w-full min-h-[48px] py-[15px] rounded-xl font-bold text-[.98em] disabled:opacity-60"
                     style={
                       t.status === "recue"
                         ? { background: "#FFB600", color: "#3a1500" }
@@ -214,7 +223,7 @@ export function CuisineBoard() {
                           : { background: "#31C06A", color: "#04351b" }
                     }
                   >
-                    {ADVANCE_LABEL[t.status]}
+                    {advancingId === t.id ? "…" : ADVANCE_LABEL[t.status]}
                   </button>
                   <button
                     onClick={(e) => {
@@ -297,7 +306,8 @@ export function CuisineBoard() {
             )}
             <button
               onClick={() => advance(openTicket.id, openTicket.status)}
-              className="mt-6 w-full min-h-[52px] py-[18px] rounded-2xl font-bold text-[17px]"
+              disabled={advancingId === openTicket.id}
+              className="mt-6 w-full min-h-[52px] py-[18px] rounded-2xl font-bold text-[17px] disabled:opacity-60"
               style={
                 openTicket.status === "recue"
                   ? { background: "#FFB600", color: "#3a1500" }
@@ -306,7 +316,7 @@ export function CuisineBoard() {
                     : { background: "#31C06A", color: "#04351b" }
               }
             >
-              {ADVANCE_LABEL[openTicket.status]}
+              {advancingId === openTicket.id ? "…" : ADVANCE_LABEL[openTicket.status]}
             </button>
             <button
               onClick={() => setCancelTicket(openTicket)}

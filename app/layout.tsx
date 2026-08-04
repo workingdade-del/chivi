@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ToastHost } from "@/components/shared/Toast";
 
 export const metadata: Metadata = {
   title: "CHIVI",
@@ -23,7 +24,10 @@ export default function RootLayout({
       <head>
         <link rel="stylesheet" href="/brand_kit/styles.css" />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <ToastHost />
+      </body>
     </html>
   );
 }

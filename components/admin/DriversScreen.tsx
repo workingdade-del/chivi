@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Plus, Send, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { showToast } from "@/components/shared/Toast";
 import { compressImage } from "@/lib/image-compress";
 
 interface Driver {
@@ -88,14 +89,14 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
     setBusy(false);
 
     if (error) {
-      setFormError(
-        error.code === "23505"
-          ? "Ce numéro est déjà utilisé par un autre livreur actif."
-          : "Échec de l'enregistrement du livreur."
-      );
+      const message =
+        error.code === "23505" ? "Ce numéro est déjà utilisé par un autre livreur actif." : "Échec de l'enregistrement du livreur.";
+      setFormError(message);
+      showToast(message, "error");
       return;
     }
 
+    showToast(form.id ? "Livreur mis à jour" : "Livreur ajouté");
     setShowForm(false);
     setForm(EMPTY_FORM);
     router.refresh();
@@ -116,8 +117,9 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Échec de l'envoi");
       }
+      showToast("Disponibilité demandée");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Échec de l'envoi");
+      showToast(err instanceof Error ? err.message : "Échec de l'envoi", "error");
     } finally {
       setPinging(null);
     }
@@ -185,7 +187,7 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
             disabled={busy || uploadingPhoto}
             className="bg-maroon text-gold font-bold text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
           >
-            {form.id ? "Enregistrer" : "Ajouter"}
+            {busy ? "Enregistrement…" : form.id ? "Enregistrer" : "Ajouter"}
           </button>
         </form>
       )}

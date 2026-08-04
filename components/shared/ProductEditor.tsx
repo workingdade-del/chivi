@@ -7,6 +7,7 @@ import { compressImage } from "@/lib/image-compress";
 import { getMenuImageUrl } from "@/lib/menu-image";
 import { formatFcfa } from "@/lib/format";
 import { MenuImage } from "@/components/client/MenuImage";
+import { showToast } from "@/components/shared/Toast";
 
 export interface EditorCategory {
   id: string;
@@ -32,6 +33,8 @@ interface VariantRow {
   group_label: string;
   name: string;
   price: number;
+  ingredient_cost: number;
+  packaging_cost: number;
   is_available: boolean;
   sort_order: number;
 }
@@ -103,7 +106,11 @@ export function ProductEditor({
 
     const [{ data: p, error: pErr }, { data: v }, { data: g }, { data: cost }, { data: supplements }, { data: linked }] = await Promise.all([
       supabase.from("products").select("id, name, description, category, base_price, image_path, ingredients, is_available").eq("id", productId).maybeSingle(),
-      supabase.from("product_variants").select("id, group_label, name, price, is_available, sort_order").eq("product_id", productId).order("sort_order"),
+      supabase
+        .from("product_variants")
+        .select("id, group_label, name, price, ingredient_cost, packaging_cost, is_available, sort_order")
+        .eq("product_id", productId)
+        .order("sort_order"),
       supabase.from("product_images").select("id, image_path, sort_order").eq("product_id", productId).order("sort_order"),
       supabase.from("product_costs").select("ingredient_cost, packaging_cost, notes").eq("product_id", productId).maybeSingle(),
       supabase.from("supplements").select("id, name, price").order("sort_order"),
@@ -161,6 +168,7 @@ export function ProductEditor({
 
       if (prodErr) {
         setError(`Échec de l'enregistrement : ${prodErr.message}`);
+        showToast(`Échec de l'enregistrement : ${prodErr.message}`, "error");
         setSaving(false);
         return;
       }
@@ -189,10 +197,13 @@ export function ProductEditor({
 
     if (costErr) {
       setError(`Échec de l'enregistrement des coûts : ${costErr.message}`);
+      showToast(`Échec de l'enregistrement des coûts : ${costErr.message}`, "error");
       return;
     }
 
+    showToast("✅ Enregistré");
     onChanged();
+    onClose();
   }
 
   async function handleMainPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -210,6 +221,7 @@ export function ProductEditor({
       onChanged();
     } else {
       setError(`Échec de l'upload : ${upErr.message}`);
+      showToast(`Échec de l'upload : ${upErr.message}`, "error");
     }
     setUploadingMain(false);
     e.target.value = "";
@@ -271,7 +283,7 @@ export function ProductEditor({
     const { data } = await supabase
       .from("product_variants")
       .insert({ product_id: productId, group_label: "Option", name: "Nouvelle option", price: product?.base_price ?? 0, sort_order: variants.length })
-      .select("id, group_label, name, price, is_available, sort_order")
+      .select("id, group_label, name, price, ingredient_cost, packaging_cost, is_available, sort_order")
       .single();
     if (data) setVariants((v) => [...v, data]);
   }
@@ -296,8 +308,10 @@ export function ProductEditor({
     setSaving(false);
     if (delErr) {
       setError(`Échec de la suppression : ${delErr.message}`);
+      showToast(`Échec de la suppression : ${delErr.message}`, "error");
       return;
     }
+    showToast("Plat supprimé");
     onDeleted?.();
   }
 
@@ -494,32 +508,62 @@ export function ProductEditor({
             {/* Variantes */}
             {scope === "full" && (
               <Field label="Variantes" labelColor={labelColor}>
-                <div className="flex flex-col gap-2">
-                  {variants.map((v) => (
-                    <div key={v.id} className="flex items-center gap-2">
-                      <input
-                        className={`flex-1 rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
-                        value={v.group_label}
-                        onChange={(e) => handleUpdateVariant(v.id, { group_label: e.target.value })}
-                        placeholder="Groupe (ex: Protéine)"
-                      />
-                      <input
-                        className={`flex-1 rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
-                        value={v.name}
-                        onChange={(e) => handleUpdateVariant(v.id, { name: e.target.value })}
-                        placeholder="Nom"
-                      />
-                      <input
-                        type="number"
-                        className={`w-24 rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
-                        value={v.price}
-                        onChange={(e) => handleUpdateVariant(v.id, { price: Math.round(parseFloat(e.target.value) || 0) })}
-                      />
-                      <button onClick={() => handleDeleteVariant(v.id)} aria-label="Supprimer la variante">
-                        <Trash2 size={16} className="text-red-500" />
-                      </button>
-                    </div>
-                  ))}
+                <div className="flex flex-col gap-3">
+                  {variants.map((v) => {
+                    const vCost = v.ingredient_cost + v.packaging_cost;
+                    const vMargin = v.price - vCost;
+                    const vMarginPct = v.price > 0 ? Math.round((vMargin / v.price) * 100) : 0;
+                    return (
+                      <div key={v.id} className={`rounded-lg border ${borderColor} p-2.5 flex flex-col gap-2`}>
+                        <div className="flex items-center gap-2">
+                          <input
+                            className={`flex-1 rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                            value={v.group_label}
+                            onChange={(e) => handleUpdateVariant(v.id, { group_label: e.target.value })}
+                            placeholder="Groupe (ex: Protéine)"
+                          />
+                          <input
+                            className={`flex-1 rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                            value={v.name}
+                            onChange={(e) => handleUpdateVariant(v.id, { name: e.target.value })}
+                            placeholder="Nom"
+                          />
+                          <input
+                            type="number"
+                            className={`w-24 rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                            value={v.price}
+                            onChange={(e) => handleUpdateVariant(v.id, { price: Math.round(parseFloat(e.target.value) || 0) })}
+                          />
+                          <button onClick={() => handleDeleteVariant(v.id)} aria-label="Supprimer la variante">
+                            <Trash2 size={16} className="text-red-500" />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 flex items-center gap-1.5">
+                            <span className={`text-[10px] uppercase ${labelColor}`}>Ingrédients</span>
+                            <input
+                              type="number"
+                              className={`w-full rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                              value={v.ingredient_cost}
+                              onChange={(e) => handleUpdateVariant(v.id, { ingredient_cost: Math.round(parseFloat(e.target.value) || 0) })}
+                            />
+                          </div>
+                          <div className="flex-1 flex items-center gap-1.5">
+                            <span className={`text-[10px] uppercase ${labelColor}`}>Emballage</span>
+                            <input
+                              type="number"
+                              className={`w-full rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                              value={v.packaging_cost}
+                              onChange={(e) => handleUpdateVariant(v.id, { packaging_cost: Math.round(parseFloat(e.target.value) || 0) })}
+                            />
+                          </div>
+                          <span className={`flex-none text-xs font-bold ${vMargin >= 0 ? "text-status-green-deep" : "text-red-500"}`}>
+                            {formatFcfa(vMargin)} ({vMarginPct}%)
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                   <button onClick={handleAddVariant} className={`flex items-center gap-1 text-xs font-semibold ${labelColor}`}>
                     <Plus size={14} /> Ajouter une variante
                   </button>

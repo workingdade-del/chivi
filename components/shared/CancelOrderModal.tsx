@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { showToast } from "@/components/shared/Toast";
 
 export function CancelOrderModal({
   orderId,
@@ -30,9 +31,12 @@ export function CancelOrderModal({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Échec de l'annulation");
+      showToast("Commande annulée");
       onCancelled();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Échec de l'annulation");
+      const message = err instanceof Error ? err.message : "Échec de l'annulation";
+      setError(message);
+      showToast(message, "error");
     } finally {
       setBusy(false);
     }

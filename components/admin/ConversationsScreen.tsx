@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Send, UserRound, Bike, HelpCircle, Plus, X, Mic, Square, Paperclip, FileText, Download } from "lucide-react";
+import { Bot, Send, UserRound, Bike, HelpCircle, Plus, X, Mic, Square, Paperclip, FileText, Download, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/image-compress";
 import { useStaffNotificationsStore, isConversationUnread } from "@/lib/store/staff-notifications";
 import { avatarColorFor } from "@/lib/avatar-color";
+import { showToast } from "@/components/shared/Toast";
 
 interface ConversationSummary {
   normalized_phone: string;
@@ -199,7 +200,7 @@ export function ConversationsScreen() {
       await fetchConversations();
     } catch (err) {
       setReplyText(text);
-      alert(err instanceof Error ? err.message : "Échec de l'envoi");
+      showToast(err instanceof Error ? err.message : "Échec de l'envoi", "error");
     } finally {
       setSending(false);
     }
@@ -257,7 +258,7 @@ export function ConversationsScreen() {
         filename: isImage ? undefined : file.name,
       });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Échec de l'envoi de la pièce jointe");
+      showToast(err instanceof Error ? err.message : "Échec de l'envoi de la pièce jointe", "error");
     } finally {
       setAttaching(false);
     }
@@ -299,7 +300,7 @@ export function ConversationsScreen() {
 
           await sendMediaMessage({ mediaPath: path, mediaType: "audio", mimeType: blobType });
         } catch (err) {
-          alert(err instanceof Error ? err.message : "Échec de l'envoi du message vocal");
+          showToast(err instanceof Error ? err.message : "Échec de l'envoi du message vocal", "error");
         } finally {
           setRecordingBusy(false);
         }
@@ -309,7 +310,7 @@ export function ConversationsScreen() {
       recorder.start();
       setIsRecording(true);
     } catch {
-      alert("Impossible d'accéder au micro. Vérifie les permissions du navigateur.");
+      showToast("Impossible d'accéder au micro. Vérifie les permissions du navigateur.", "error");
     }
   }
 
@@ -521,7 +522,7 @@ export function ConversationsScreen() {
                 title="Joindre un fichier"
                 className="flex-none w-11 h-11 rounded-xl bg-[#f4ead2] text-maroon flex items-center justify-center disabled:opacity-50"
               >
-                <Paperclip size={18} />
+                {attaching ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
               </button>
               <button
                 onClick={handleMicClick}
@@ -531,7 +532,7 @@ export function ConversationsScreen() {
                   isRecording ? "bg-chilli text-white animate-pulse" : "bg-[#f4ead2] text-maroon"
                 }`}
               >
-                {isRecording ? <Square size={16} /> : <Mic size={18} />}
+                {recordingBusy ? <Loader2 size={18} className="animate-spin" /> : isRecording ? <Square size={16} /> : <Mic size={18} />}
               </button>
               <input
                 value={replyText}
@@ -550,7 +551,7 @@ export function ConversationsScreen() {
                 disabled={sending || !replyText.trim()}
                 className="flex-none w-11 h-11 rounded-xl bg-maroon text-gold flex items-center justify-center disabled:opacity-50"
               >
-                <Send size={18} />
+                {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
               </button>
             </div>
           </>

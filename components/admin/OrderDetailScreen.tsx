@@ -7,6 +7,7 @@ import { formatFcfa } from "@/lib/format";
 import { CLIENT_TIMELINE, STATUS_LABELS, STATUS_COLORS, clientTimelineIndex } from "@/lib/order-status";
 import { CancelOrderModal } from "@/components/shared/CancelOrderModal";
 import { EditOrderModal } from "@/components/admin/EditOrderModal";
+import { showToast } from "@/components/shared/Toast";
 import type { OrderDetailData } from "@/lib/admin";
 import type { OrderStatus } from "@/lib/supabase/types";
 
@@ -72,8 +73,9 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
       }
       setAssigning(false);
       setSelectedDriver("");
+      showToast("Livreur assigné");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Échec de l'assignation");
+      showToast(err instanceof Error ? err.message : "Échec de l'assignation", "error");
     } finally {
       setBusy(false);
       router.refresh();
@@ -83,7 +85,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
   async function handleMarkDelivered() {
     setBusy(true);
     const supabase = createClient();
-    await supabase.from("orders").update({ status: "livree" }).eq("id", order.id);
+    const { error } = await supabase.from("orders").update({ status: "livree" }).eq("id", order.id);
     if (assignment) {
       await supabase
         .from("order_assignments")
@@ -94,6 +96,11 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
       await supabase.from("drivers").update({ status: "libre" }).eq("id", driver.id);
     }
     setBusy(false);
+    if (error) {
+      showToast(`Échec : ${error.message}`, "error");
+      return;
+    }
+    showToast("Commande marquée livrée");
     router.refresh();
   }
 
@@ -104,9 +111,10 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
     const { error } = await supabase.from("orders").update({ status: newStatus }).eq("id", order.id);
     setBusy(false);
     if (error) {
-      alert("Échec du changement de statut : " + error.message);
+      showToast(`Échec du changement de statut : ${error.message}`, "error");
       return;
     }
+    showToast(`Statut changé : ${STATUS_LABELS[newStatus]}`);
     router.refresh();
   }
 
@@ -118,8 +126,9 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Échec de la relance");
       }
+      showToast("Commande relancée");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Échec de la relance");
+      showToast(err instanceof Error ? err.message : "Échec de la relance", "error");
     } finally {
       setBusy(false);
       router.refresh();
@@ -281,7 +290,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
                       disabled={!selectedDriver || selectedDriver === driver?.id || busy}
                       className="flex-1 py-3 rounded-xl bg-maroon text-gold font-bold text-sm disabled:opacity-50"
                     >
-                      Confirmer
+                      {busy ? "…" : "Confirmer"}
                     </button>
                   </div>
                 </div>
@@ -295,7 +304,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
               disabled={busy}
               className="w-full mt-4 py-3 rounded-xl bg-status-green text-white font-bold text-sm disabled:opacity-50"
             >
-              Marquer livrée
+              {busy ? "Enregistrement…" : "Marquer livrée"}
             </button>
           )}
         </div>
@@ -315,7 +324,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
             disabled={busy}
             className="w-full py-3 rounded-xl bg-maroon text-gold font-bold text-sm disabled:opacity-50"
           >
-            Relancer la commande
+            {busy ? "Relance…" : "Relancer la commande"}
           </button>
         )}
       </div>

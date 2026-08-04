@@ -62,6 +62,8 @@ export interface Database {
           group_label: string;
           name: string;
           price: number;
+          ingredient_cost: number;
+          packaging_cost: number;
           is_available: boolean;
           sort_order: number;
         },
