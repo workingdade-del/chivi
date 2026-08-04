@@ -201,8 +201,11 @@ export function ProductEditor({
     setUploadingMain(true);
     const supabase = createClient();
     const compressed = await compressImage(file, 1000).catch(() => file);
-    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}.jpg`;
-    const { error: upErr } = await supabase.storage.from("menu-images").upload(path, compressed, { upsert: true, contentType: "image/jpeg" });
+    const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_");
+    const path = `${Date.now()}-${baseName}.jpg`;
+    // TEMPORAIRE — diagnostic RLS, bucket de test — NE PAS COMMIT.
+    // Revenir à "menu-images" une fois le test terminé.
+    const { error: upErr } = await supabase.storage.from("menu-images-verify").upload(path, compressed, { upsert: true, contentType: "image/jpeg" });
     if (!upErr) {
       await supabase.from("products").update({ image_path: path }).eq("id", productId);
       setProduct((p) => (p ? { ...p, image_path: path } : p));
@@ -223,7 +226,8 @@ export function ProductEditor({
 
     for (const file of files) {
       const compressed = await compressImage(file, 1200).catch(() => file);
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}.jpg`;
+      const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_");
+      const path = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${baseName}.jpg`;
       const { error: upErr } = await supabase.storage.from("menu-images").upload(path, compressed, { contentType: "image/jpeg" });
       if (!upErr) {
         const { data: row } = await supabase
