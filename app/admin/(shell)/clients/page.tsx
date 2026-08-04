@@ -6,7 +6,13 @@ export default async function AdminClientsPage() {
   const clients = await getClients();
 
   return (
-    <div className="bg-white border border-[#ece2cd] rounded-2xl overflow-hidden">
+    <div>
+      <div className="flex justify-end mb-4">
+        <Link href="/admin/clients/new" className="px-4 py-2 rounded-full text-[13px] font-bold bg-maroon text-gold">
+          + Nouveau client
+        </Link>
+      </div>
+      <div className="bg-white border border-[#ece2cd] rounded-2xl overflow-hidden">
       <div
         className="grid gap-3 px-5 py-3.5 bg-[#faf4e8] border-b border-[#efe6d3] text-[11px] tracking-wide uppercase text-[#9a8b78] font-semibold"
         style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr 1fr 40px" }}
@@ -37,6 +43,7 @@ export default async function AdminClientsPage() {
         </Link>
       ))}
       {clients.length === 0 && <div className="px-5 py-10 text-center text-[#9a8b78] text-sm">Aucun client pour le moment.</div>}
+      </div>
     </div>
   );
 }
