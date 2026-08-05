@@ -76,6 +76,15 @@ function startOfMonth(d: Date) {
   return fromCotonouWallClock(wall);
 }
 
+function startOfYear(d: Date) {
+  const wall = toCotonouWallClock(d);
+  wall.setUTCHours(0, 0, 0, 0);
+  wall.setUTCMonth(0, 1);
+  return fromCotonouWallClock(wall);
+}
+
+const MONTH_LABELS_FR = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+
 export interface DashboardData {
   ordersToday: number;
   revenueToday: number;
@@ -180,6 +189,120 @@ export async function getDashboardData(): Promise<DashboardData> {
     dishMarginToday: dishMargin.knownMargin,
     dishMarginCoveragePct: dishMargin.coveragePct,
   };
+}
+
+export type ChartView = "semaine" | "mois" | "annee";
+
+export interface RevenueChartData {
+  view: ChartView;
+  offset: number;
+  rangeLabel: string;
+  points: { label: string; revenue: number }[];
+  /** false quand offset=0 — on ne navigue jamais vers une période future. */
+  canGoNext: boolean;
+}
+
+/**
+ * Chiffre d'affaires pour le widget "Revenus" du Dashboard, navigable
+ * (semaine/mois/année, précédent/suivant). offset=0 = période courante ;
+ * offset croissant = on remonte dans le passé. Toutes les frontières de
+ * calendrier sont calculées en heure de Cotonou (voir toCotonouWallClock).
+ */
+export async function getRevenueChart(view: ChartView, offset: number): Promise<RevenueChartData> {
+  const supabase = createClient();
+  const safeOffset = Math.max(0, Math.floor(offset) || 0);
+  const now = new Date();
+
+  if (view === "semaine") {
+    const end = startOfDay(now);
+    end.setDate(end.getDate() - safeOffset * 7);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 6);
+    const endExclusive = new Date(end);
+    endExclusive.setDate(endExclusive.getDate() + 1);
+
+    const { data } = await supabase
+      .from("orders")
+      .select("total, created_at")
+      .gte("created_at", start.toISOString())
+      .lt("created_at", endExclusive.toISOString())
+      .neq("status", "annulee");
+
+    const points = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(start);
+      day.setDate(day.getDate() + i);
+      const dayRevenue = (data ?? [])
+        .filter((o) => startOfDay(new Date(o.created_at)).getTime() === day.getTime())
+        .reduce((s, o) => s + o.total, 0);
+      points.push({ label: day.toLocaleDateString("fr-FR", { weekday: "short" }), revenue: dayRevenue });
+    }
+
+    const rangeLabel = `${start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`;
+    return { view, offset: safeOffset, rangeLabel, points, canGoNext: safeOffset > 0 };
+  }
+
+  if (view === "mois") {
+    const nowWall = toCotonouWallClock(now);
+    const targetY = nowWall.getUTCFullYear();
+    const targetM = nowWall.getUTCMonth() - safeOffset;
+    const monthStartWall = new Date(Date.UTC(targetY, targetM, 1));
+    const monthEndWall = new Date(Date.UTC(targetY, targetM + 1, 1));
+    const start = fromCotonouWallClock(monthStartWall);
+    const end = fromCotonouWallClock(monthEndWall);
+
+    const { data } = await supabase
+      .from("orders")
+      .select("total, created_at")
+      .gte("created_at", start.toISOString())
+      .lt("created_at", end.toISOString())
+      .neq("status", "annulee");
+
+    const daysInMonth = new Date(Date.UTC(targetY, targetM + 1, 0)).getUTCDate();
+    const points = [];
+    for (let d = 0; d < daysInMonth; d++) {
+      const dayStart = fromCotonouWallClock(new Date(Date.UTC(targetY, targetM, 1 + d)));
+      const dayEnd = fromCotonouWallClock(new Date(Date.UTC(targetY, targetM, 2 + d)));
+      const dayRevenue = (data ?? [])
+        .filter((o) => {
+          const t = new Date(o.created_at).getTime();
+          return t >= dayStart.getTime() && t < dayEnd.getTime();
+        })
+        .reduce((s, o) => s + o.total, 0);
+      points.push({ label: String(d + 1), revenue: dayRevenue });
+    }
+
+    const rangeLabel = `${MONTH_LABELS_FR[monthStartWall.getUTCMonth()]} ${monthStartWall.getUTCFullYear()}`;
+    return { view, offset: safeOffset, rangeLabel, points, canGoNext: safeOffset > 0 };
+  }
+
+  // view === "annee"
+  const nowWall = toCotonouWallClock(now);
+  const targetYear = nowWall.getUTCFullYear() - safeOffset;
+  const yearStart = fromCotonouWallClock(new Date(Date.UTC(targetYear, 0, 1)));
+  const yearEnd = fromCotonouWallClock(new Date(Date.UTC(targetYear + 1, 0, 1)));
+
+  const { data } = await supabase
+    .from("orders")
+    .select("total, created_at")
+    .gte("created_at", yearStart.toISOString())
+    .lt("created_at", yearEnd.toISOString())
+    .neq("status", "annulee");
+
+  const points = [];
+  for (let m = 0; m < 12; m++) {
+    const monthStart = fromCotonouWallClock(new Date(Date.UTC(targetYear, m, 1)));
+    const monthEnd = fromCotonouWallClock(new Date(Date.UTC(targetYear, m + 1, 1)));
+    const monthRevenue = (data ?? [])
+      .filter((o) => {
+        const t = new Date(o.created_at).getTime();
+        return t >= monthStart.getTime() && t < monthEnd.getTime();
+      })
+      .reduce((s, o) => s + o.total, 0);
+    points.push({ label: MONTH_LABELS_FR[m], revenue: monthRevenue });
+  }
+
+  return { view, offset: safeOffset, rangeLabel: String(targetYear), points, canGoNext: safeOffset > 0 };
 }
 
 export interface AdminOrderRow {
@@ -310,7 +433,11 @@ export async function getClientDetail(id: string) {
   return { profile, orders: (orders ?? []) as unknown as ClientOrderRow[] };
 }
 
-export type ReportPeriod = "jour" | "semaine" | "mois";
+export type ReportPeriod = "jour" | "semaine" | "mois" | "annee";
+export interface CustomDateRange {
+  start: string; // "YYYY-MM-DD"
+  end: string; // "YYYY-MM-DD", inclusif
+}
 
 export interface ReportRow {
   label: string;
@@ -342,10 +469,26 @@ const DAYPARTS = [
   { label: "18h–24h", start: 18, end: 24 },
 ];
 
-export async function getReport(period: ReportPeriod): Promise<ReportData> {
+export async function getReport(period: ReportPeriod, customRange?: CustomDateRange): Promise<ReportData> {
   const supabase = createClient();
   const today = startOfDay(new Date());
-  const rangeStart = period === "jour" ? today : period === "semaine" ? startOfWeek(new Date()) : startOfMonth(new Date());
+
+  let rangeStart: Date;
+  let rangeEndExclusive: Date | null = null; // null = pas de borne haute (comportement historique, va jusqu'à "maintenant")
+  if (customRange) {
+    rangeStart = startOfDay(new Date(customRange.start));
+    const endDay = startOfDay(new Date(customRange.end));
+    rangeEndExclusive = new Date(endDay);
+    rangeEndExclusive.setDate(rangeEndExclusive.getDate() + 1);
+  } else if (period === "jour") {
+    rangeStart = today;
+  } else if (period === "semaine") {
+    rangeStart = startOfWeek(new Date());
+  } else if (period === "mois") {
+    rangeStart = startOfMonth(new Date());
+  } else {
+    rangeStart = startOfYear(new Date());
+  }
 
   type PeriodOrderItem = {
     product_id: string | null;
@@ -362,20 +505,21 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
     order_items: PeriodOrderItem[];
   }
 
-  const { data: ordersRaw, error: ordersErr } = await supabase
+  let ordersQuery = supabase
     .from("orders")
     .select(
       "total, delivery_fee, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
     )
     .gte("created_at", rangeStart.toISOString())
     .neq("status", "annulee");
+  if (rangeEndExclusive) ordersQuery = ordersQuery.lt("created_at", rangeEndExclusive.toISOString());
+  const { data: ordersRaw, error: ordersErr } = await ordersQuery;
   if (ordersErr) console.error("[report] échec lecture orders de la période :", ordersErr.message);
   const orders = (ordersRaw ?? []) as unknown as PeriodOrderRow[];
 
-  const { data: expenses, error: expensesErr } = await supabase
-    .from("expenses")
-    .select("amount, expense_date")
-    .gte("expense_date", rangeStart.toISOString().slice(0, 10));
+  let expensesQuery = supabase.from("expenses").select("amount, expense_date").gte("expense_date", rangeStart.toISOString().slice(0, 10));
+  if (rangeEndExclusive) expensesQuery = expensesQuery.lt("expense_date", rangeEndExclusive.toISOString().slice(0, 10));
+  const { data: expenses, error: expensesErr } = await expensesQuery;
   if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
 
   const revenue = (orders ?? []).reduce((s, o) => s + o.total, 0);
@@ -397,7 +541,68 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
   let rowHead = "Période";
   let label = "aujourd'hui";
 
-  if (period === "jour") {
+  function bucketByDay(from: Date, toExclusive: Date) {
+    rowHead = "Jour";
+    for (let day = new Date(from); day < toExclusive; day.setDate(day.getDate() + 1)) {
+      const d = new Date(day);
+      const dayOrders = (orders ?? []).filter((o) => startOfDay(new Date(o.created_at)).getTime() === d.getTime());
+      const dayRevenue = dayOrders.reduce((s, o) => s + o.total, 0);
+      rows.push({
+        label: d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }),
+        orders: dayOrders.length,
+        revenue: dayRevenue,
+        costs: 0,
+        profit: dayRevenue,
+      });
+    }
+  }
+
+  function bucketByMonth(from: Date, toExclusive: Date) {
+    rowHead = "Mois";
+    const fromWall = toCotonouWallClock(from);
+    const toWall = toCotonouWallClock(toExclusive);
+    let y = fromWall.getUTCFullYear();
+    let m = fromWall.getUTCMonth();
+    while (y < toWall.getUTCFullYear() || (y === toWall.getUTCFullYear() && m < toWall.getUTCMonth())) {
+      const monthStart = fromCotonouWallClock(new Date(Date.UTC(y, m, 1)));
+      const monthEnd = fromCotonouWallClock(new Date(Date.UTC(y, m + 1, 1)));
+      const monthOrders = (orders ?? []).filter((o) => {
+        const t = new Date(o.created_at).getTime();
+        return t >= monthStart.getTime() && t < monthEnd.getTime();
+      });
+      const monthRevenue = monthOrders.reduce((s, o) => s + o.total, 0);
+      rows.push({ label: `${MONTH_LABELS_FR[m]} ${y}`, orders: monthOrders.length, revenue: monthRevenue, costs: 0, profit: monthRevenue });
+      m++;
+      if (m > 11) {
+        m = 0;
+        y++;
+      }
+    }
+  }
+
+  function bucketByYear(from: Date, toExclusive: Date) {
+    rowHead = "Année";
+    const fromWall = toCotonouWallClock(from);
+    const toWall = toCotonouWallClock(toExclusive);
+    for (let y = fromWall.getUTCFullYear(); y <= toWall.getUTCFullYear(); y++) {
+      const yearStart = fromCotonouWallClock(new Date(Date.UTC(y, 0, 1)));
+      const yearEnd = fromCotonouWallClock(new Date(Date.UTC(y + 1, 0, 1)));
+      const yearOrders = (orders ?? []).filter((o) => {
+        const t = new Date(o.created_at).getTime();
+        return t >= yearStart.getTime() && t < yearEnd.getTime();
+      });
+      const yearRevenue = yearOrders.reduce((s, o) => s + o.total, 0);
+      rows.push({ label: String(y), orders: yearOrders.length, revenue: yearRevenue, costs: 0, profit: yearRevenue });
+    }
+  }
+
+  if (customRange) {
+    const spanDays = Math.round((rangeEndExclusive!.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000));
+    label = `du ${new Date(customRange.start).toLocaleDateString("fr-FR")} au ${new Date(customRange.end).toLocaleDateString("fr-FR")}`;
+    if (spanDays <= 31) bucketByDay(rangeStart, rangeEndExclusive!);
+    else if (spanDays <= 366) bucketByMonth(rangeStart, rangeEndExclusive!);
+    else bucketByYear(rangeStart, rangeEndExclusive!);
+  } else if (period === "jour") {
     rowHead = "Heure";
     label = "aujourd'hui";
     rows = DAYPARTS.map((part) => {
@@ -409,23 +614,11 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
       return { label: part.label, orders: partOrders.length, revenue: partRevenue, costs: 0, profit: partRevenue };
     });
   } else if (period === "semaine") {
-    rowHead = "Jour";
     label = "cette semaine";
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(rangeStart);
-      day.setDate(day.getDate() + i);
-      if (day > new Date()) break;
-      const dayOrders = (orders ?? []).filter((o) => startOfDay(new Date(o.created_at)).getTime() === day.getTime());
-      const dayRevenue = dayOrders.reduce((s, o) => s + o.total, 0);
-      rows.push({
-        label: day.toLocaleDateString("fr-FR", { weekday: "long" }),
-        orders: dayOrders.length,
-        revenue: dayRevenue,
-        costs: 0,
-        profit: dayRevenue,
-      });
-    }
-  } else {
+    const end = new Date(rangeStart);
+    end.setDate(end.getDate() + 7);
+    bucketByDay(rangeStart, new Date(Math.min(end.getTime(), Date.now())));
+  } else if (period === "mois") {
     rowHead = "Semaine";
     label = "ce mois";
     for (let w = 0; w < 5; w++) {
@@ -441,6 +634,11 @@ export async function getReport(period: ReportPeriod): Promise<ReportData> {
       const weekRevenue = weekOrders.reduce((s, o) => s + o.total, 0);
       rows.push({ label: `Semaine ${w + 1}`, orders: weekOrders.length, revenue: weekRevenue, costs: 0, profit: weekRevenue });
     }
+  } else {
+    label = "cette année";
+    const end = new Date(rangeStart);
+    end.setFullYear(end.getFullYear() + 1);
+    bucketByMonth(rangeStart, new Date(Math.min(end.getTime(), Date.now())));
   }
 
   return {

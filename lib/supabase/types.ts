@@ -183,6 +183,31 @@ export interface Database {
         },
         "label" | "amount"
       >;
+      finance_accounts: Table<
+        {
+          id: string;
+          name: string;
+          type: "ventes" | "dettes" | "personnalise";
+          created_at: string;
+        },
+        "name" | "type"
+      >;
+      finance_transactions: Table<
+        {
+          id: string;
+          account_id: string;
+          type: "entree" | "sortie";
+          amount: number;
+          description: string | null;
+          category: string | null;
+          date: string;
+          source_type: "order" | "expense" | "manual";
+          source_id: string | null;
+          created_by: string | null;
+          created_at: string;
+        },
+        "account_id" | "type" | "amount"
+      >;
       whatsapp_messages: Table<
         {
           id: string;
