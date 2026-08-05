@@ -77,7 +77,14 @@ function NewAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
     if (!name.trim()) return;
     setBusy(true);
     const supabase = createClient();
-    const { error } = await supabase.from("finance_accounts").insert({ name: name.trim(), type: "personnalise" });
+
+    // DEBUG TEMPORAIRE — diagnostic 404 finance_accounts, à retirer une fois résolu.
+    console.log("[FINANCE DEBUG] table ciblée :", "finance_accounts");
+    console.log("[FINANCE DEBUG] NEXT_PUBLIC_SUPABASE_URL :", process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log("[FINANCE DEBUG] clé anon (10 premiers caractères) :", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 10));
+
+    const { error, status, statusText } = await supabase.from("finance_accounts").insert({ name: name.trim(), type: "personnalise" });
+    console.log("[FINANCE DEBUG] réponse — status:", status, "statusText:", statusText, "error:", JSON.stringify(error, null, 2));
     setBusy(false);
     if (error) {
       showToast(`Échec de la création : ${error.message}`, "error");
