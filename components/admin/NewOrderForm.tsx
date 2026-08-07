@@ -39,6 +39,7 @@ export function NewOrderForm() {
   const [items, setItems] = useState<EditableOrderItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash_livraison");
   const [status, setStatus] = useState<OrderStatus>("recue");
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [driverId, setDriverId] = useState("");
@@ -95,6 +96,7 @@ export function NewOrderForm() {
           })),
           paymentMethod,
           status,
+          orderDate,
           deliveryAddress: deliveryAddress.trim() || undefined,
           deliveryFee,
           driverId: driverId || undefined,
@@ -209,6 +211,17 @@ export function NewOrderForm() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-[#9a8b78] block mb-1.5">Date de la commande</label>
+            <input
+              type="date"
+              value={orderDate}
+              onChange={(e) => setOrderDate(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              className="w-full border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2.5 text-sm"
+            />
           </div>
 
           <div>

@@ -509,6 +509,47 @@ export function ProductEditor({
             {scope === "full" && (
               <Field label="Variantes" labelColor={labelColor}>
                 <div className="flex flex-col gap-3">
+                  {/* Prix de base — pas une entrée product_variants, lié directement à
+                      products.base_price / product_costs. Toujours visible en premier,
+                      non supprimable : c'est l'option choisie quand le client commande
+                      le plat sans sélectionner de variante nommée. */}
+                  <div className={`rounded-lg border ${borderColor} p-2.5 flex flex-col gap-2 bg-[rgba(0,0,0,.02)]`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`flex-1 text-xs font-bold ${textColor}`}>Prix de base</span>
+                      <input
+                        type="number"
+                        className={`w-24 rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                        value={basePrice}
+                        onChange={(e) => setBasePrice(e.target.value)}
+                        disabled={scope !== "full"}
+                      />
+                      <span className="w-4" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <span className={`text-[10px] uppercase ${labelColor}`}>Ingrédients</span>
+                        <input
+                          type="number"
+                          className={`w-full rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                          value={ingredientCost}
+                          onChange={(e) => setIngredientCost(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <span className={`text-[10px] uppercase ${labelColor}`}>Emballage</span>
+                        <input
+                          type="number"
+                          className={`w-full rounded-lg border px-2 py-1.5 text-xs ${inputBg}`}
+                          value={packagingCost}
+                          onChange={(e) => setPackagingCost(e.target.value)}
+                        />
+                      </div>
+                      <span className={`flex-none text-xs font-bold ${margin >= 0 ? "text-status-green-deep" : "text-red-500"}`}>
+                        {formatFcfa(margin)} ({marginPct}%)
+                      </span>
+                    </div>
+                  </div>
+
                   {variants.map((v) => {
                     const vCost = v.ingredient_cost + v.packaging_cost;
                     const vMargin = v.price - vCost;

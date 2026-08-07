@@ -236,6 +236,7 @@ export interface Database {
           pause_reason: string | null;
           paused_at: string | null;
           paused_by: string | null;
+          ai_model: "groq" | "claude";
         },
         "id"
       >;

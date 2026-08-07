@@ -45,6 +45,8 @@ export async function POST(req: NextRequest) {
     items?: CreateItemPayload[];
     paymentMethod?: PaymentMethod;
     status?: OrderStatus;
+    /** "YYYY-MM-DD" — pour saisir une commande passée. Par défaut : maintenant. */
+    orderDate?: string;
     deliveryAddress?: string;
     deliveryFee?: number;
     driverId?: string;
@@ -84,6 +86,11 @@ export async function POST(req: NextRequest) {
   const subtotal = body.items.reduce((s, i) => s + i.lineTotal, 0);
   const total = subtotal + deliveryFee;
 
+  // Saisie d'une commande passée : on fixe created_at à midi ce jour-là
+  // plutôt qu'à minuit pile, pour rester loin de toute frontière de jour
+  // (voir le fuseau Cotonou vs UTC serveur documenté dans lib/admin.ts).
+  const createdAt = body.orderDate ? `${body.orderDate}T12:00:00.000Z` : undefined;
+
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .insert({
@@ -96,6 +103,7 @@ export async function POST(req: NextRequest) {
       total,
       delivery_address: body.deliveryAddress ? sanitizeText(body.deliveryAddress, 300) : null,
       source: "admin_manual",
+      ...(createdAt ? { created_at: createdAt } : {}),
     })
     .select("id, order_number")
     .single();

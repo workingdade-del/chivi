@@ -7,6 +7,8 @@ import { formatFcfa } from "@/lib/format";
 import { CLIENT_TIMELINE, STATUS_LABELS, STATUS_COLORS, clientTimelineIndex } from "@/lib/order-status";
 import { CancelOrderModal } from "@/components/shared/CancelOrderModal";
 import { EditOrderModal } from "@/components/admin/EditOrderModal";
+import { DeleteOrderModal } from "@/components/admin/DeleteOrderModal";
+import { ChangeOrderClientModal } from "@/components/admin/ChangeOrderClientModal";
 import { showToast } from "@/components/shared/Toast";
 import type { OrderDetailData } from "@/lib/admin";
 import type { OrderStatus } from "@/lib/supabase/types";
@@ -34,6 +36,8 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
   const [busy, setBusy] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showChangeClientModal, setShowChangeClientModal] = useState(false);
 
   const assignment = order.order_assignments?.[0];
   const driver = assignment?.drivers ?? null;
@@ -194,6 +198,17 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
 
       <div className="flex flex-col gap-4">
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="font-bold text-sm text-ink">Client</div>
+            <button onClick={() => setShowChangeClientModal(true)} className="text-[12px] font-semibold text-maroon underline">
+              Changer
+            </button>
+          </div>
+          <div className="text-sm text-ink font-semibold">{order.profiles?.full_name || "Client"}</div>
+          <div className="text-xs text-[#9a8b78]">{order.profiles?.whatsapp_phone ?? "—"}</div>
+        </div>
+
+        <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="font-bold text-sm text-ink mb-3">Changer le statut</div>
           <select
             value={order.status}
@@ -327,6 +342,14 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
             {busy ? "Relance…" : "Relancer la commande"}
           </button>
         )}
+
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          disabled={busy}
+          className="w-full py-3 rounded-xl border-2 border-chilli text-chilli font-bold text-sm disabled:opacity-50"
+        >
+          Supprimer définitivement
+        </button>
       </div>
 
       {showCancelModal && (
@@ -349,6 +372,28 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
             setShowEditModal(false);
             router.refresh();
           }}
+        />
+      )}
+
+      {showChangeClientModal && (
+        <ChangeOrderClientModal
+          orderId={order.id}
+          currentName={order.profiles?.full_name || "Client"}
+          currentPhone={order.profiles?.whatsapp_phone ?? "—"}
+          onClose={() => setShowChangeClientModal(false)}
+          onChanged={() => {
+            setShowChangeClientModal(false);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {showDeleteModal && (
+        <DeleteOrderModal
+          orderId={order.id}
+          orderNumber={order.order_number}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => router.push("/admin/orders")}
         />
       )}
     </div>

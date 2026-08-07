@@ -35,7 +35,8 @@ import { handleStaffOrderSubmission } from "@/lib/staff-order";
 import { resolveEnvContextForPhoneNumberId, runWithEnvContext } from "@/lib/env-context";
 import { detectAvailabilityIntent } from "@/lib/driver-availability";
 import { buildChiviSystemPrompt } from "@/lib/ai-context";
-import { generateGroqReply, transcribeAudio, type ChatTurn } from "@/lib/groq";
+import { transcribeAudio, type ChatTurn } from "@/lib/groq";
+import { generateAiReply } from "@/lib/ai-provider";
 import { sanitizeText } from "@/lib/sanitize";
 import { isRateLimited } from "@/lib/rate-limit";
 import { verifyMetaSignature } from "@/lib/webhook-security";
@@ -211,9 +212,9 @@ async function handleAiReply(profileId: string, phone: string) {
     }
 
     const systemPrompt = await buildChiviSystemPrompt();
-    const reply = await generateGroqReply(systemPrompt, history);
+    const reply = await generateAiReply(systemPrompt, history);
 
-    console.log("[whatsapp-webhook] Groq reply generated", { profileId, reply });
+    console.log("[whatsapp-webhook] AI reply generated", { profileId, reply });
 
     const sendResult = await sendWhatsappText(phone, reply);
 
