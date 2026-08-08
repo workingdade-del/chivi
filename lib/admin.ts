@@ -84,6 +84,22 @@ function startOfYear(d: Date) {
 }
 
 const MONTH_LABELS_FR = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+const WEEKDAY_LABELS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+const COTONOU_TZ = "Africa/Porto-Novo";
+
+/**
+ * toLocaleDateString() sans option `timeZone` explicite lit le calendrier du
+ * fuseau du SERVEUR (UTC sur Vercel) — sur un instant déjà corrigé Cotonou
+ * (voir toCotonouWallClock plus haut), ça peut afficher le jour PRÉCÉDENT
+ * (ex: un instant "jeudi 00h Cotonou" vaut "mercredi 23h UTC" ; sans
+ * timeZone explicite, .toLocaleDateString lit "mercredi"). D'où le décalage
+ * d'un jour rapporté sur le graphique Dashboard — le regroupement des
+ * ventes était correct, seul le LABEL affiché était faux. Toujours passer
+ * ce fuseau explicitement pour tout affichage de date dérivé de ces instants.
+ */
+function formatCotonouDate(d: Date, opts: Intl.DateTimeFormatOptions): string {
+  return d.toLocaleDateString("fr-FR", { ...opts, timeZone: COTONOU_TZ });
+}
 
 export interface DashboardData {
   ordersToday: number;
@@ -91,7 +107,6 @@ export interface DashboardData {
   costsToday: number;
   profitToday: number;
   marginToday: number;
-  chart: { day: string; revenue: number }[];
   inProgress: { recue: number; en_preparation_prete: number; en_route: number };
   topDishes: { name: string; qty: number }[];
   /** Marge plats (coûts ingrédients/emballage) — distincte de "Bénéfice" ci-dessus, qui reste basée sur les dépenses saisies manuellement. */
@@ -119,25 +134,6 @@ export async function getDashboardData(): Promise<DashboardData> {
   const costsToday = (expensesToday ?? []).reduce((s, e) => s + e.amount, 0);
   const profitToday = revenueToday - costsToday;
   const marginToday = revenueToday > 0 ? Math.round((profitToday / revenueToday) * 100) : 0;
-
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  const { data: weekOrders } = await supabase
-    .from("orders")
-    .select("total, created_at")
-    .gte("created_at", sevenDaysAgo.toISOString())
-    .neq("status", "annulee");
-
-  const chart: { day: string; revenue: number }[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const day = new Date(today);
-    day.setDate(day.getDate() - i);
-    const dayLabel = day.toLocaleDateString("fr-FR", { weekday: "short" });
-    const dayRevenue = (weekOrders ?? [])
-      .filter((o) => startOfDay(new Date(o.created_at)).getTime() === day.getTime())
-      .reduce((s, o) => s + o.total, 0);
-    chart.push({ day: dayLabel, revenue: dayRevenue });
-  }
 
   const { data: activeOrders } = await supabase
     .from("orders")
@@ -183,7 +179,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     costsToday,
     profitToday,
     marginToday,
-    chart,
     inProgress,
     topDishes,
     dishMarginToday: dishMargin.knownMargin,
@@ -193,13 +188,29 @@ export async function getDashboardData(): Promise<DashboardData> {
 
 export type ChartView = "semaine" | "mois" | "annee";
 
+export interface RevenueChartPoint {
+  label: string;
+  revenue: number;
+  /** "YYYY-MM-DD" (calendrier Cotonou) pour un point journalier (semaine/mois), sinon null (année = points mensuels, pas de détail jour). */
+  date: string | null;
+}
+
 export interface RevenueChartData {
   view: ChartView;
   offset: number;
   rangeLabel: string;
-  points: { label: string; revenue: number }[];
+  points: RevenueChartPoint[];
   /** false quand offset=0 — on ne navigue jamais vers une période future. */
   canGoNext: boolean;
+}
+
+/** "YYYY-MM-DD" du jour Cotonou correspondant à cet instant, quel que soit le fuseau du serveur. */
+function cotonouDateString(d: Date): string {
+  const wall = toCotonouWallClock(d);
+  const y = wall.getUTCFullYear();
+  const m = String(wall.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(wall.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -207,6 +218,9 @@ export interface RevenueChartData {
  * (semaine/mois/année, précédent/suivant). offset=0 = période courante ;
  * offset croissant = on remonte dans le passé. Toutes les frontières de
  * calendrier sont calculées en heure de Cotonou (voir toCotonouWallClock).
+ * La vue "semaine" affiche la semaine calendaire Lundi→Dimanche contenant
+ * la période ciblée (pas une fenêtre glissante des 7 derniers jours) —
+ * convention française/béninoise standard.
  */
 export async function getRevenueChart(view: ChartView, offset: number): Promise<RevenueChartData> {
   const supabase = createClient();
@@ -214,12 +228,10 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
   const now = new Date();
 
   if (view === "semaine") {
-    const end = startOfDay(now);
-    end.setDate(end.getDate() - safeOffset * 7);
-    const start = new Date(end);
-    start.setDate(start.getDate() - 6);
-    const endExclusive = new Date(end);
-    endExclusive.setDate(endExclusive.getDate() + 1);
+    const start = startOfWeek(now); // lundi de la semaine courante, déjà Cotonou-correct
+    start.setDate(start.getDate() - safeOffset * 7);
+    const endExclusive = new Date(start);
+    endExclusive.setDate(endExclusive.getDate() + 7);
 
     const { data } = await supabase
       .from("orders")
@@ -228,17 +240,19 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
       .lt("created_at", endExclusive.toISOString())
       .neq("status", "annulee");
 
-    const points = [];
+    const points: RevenueChartPoint[] = [];
     for (let i = 0; i < 7; i++) {
       const day = new Date(start);
       day.setDate(day.getDate() + i);
       const dayRevenue = (data ?? [])
         .filter((o) => startOfDay(new Date(o.created_at)).getTime() === day.getTime())
         .reduce((s, o) => s + o.total, 0);
-      points.push({ label: day.toLocaleDateString("fr-FR", { weekday: "short" }), revenue: dayRevenue });
+      points.push({ label: WEEKDAY_LABELS_FR[i], revenue: dayRevenue, date: cotonouDateString(day) });
     }
 
-    const rangeLabel = `${start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`;
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const rangeLabel = `${formatCotonouDate(start, { day: "numeric", month: "short" })} – ${formatCotonouDate(end, { day: "numeric", month: "short" })}`;
     return { view, offset: safeOffset, rangeLabel, points, canGoNext: safeOffset > 0 };
   }
 
@@ -259,7 +273,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
       .neq("status", "annulee");
 
     const daysInMonth = new Date(Date.UTC(targetY, targetM + 1, 0)).getUTCDate();
-    const points = [];
+    const points: RevenueChartPoint[] = [];
     for (let d = 0; d < daysInMonth; d++) {
       const dayStart = fromCotonouWallClock(new Date(Date.UTC(targetY, targetM, 1 + d)));
       const dayEnd = fromCotonouWallClock(new Date(Date.UTC(targetY, targetM, 2 + d)));
@@ -269,14 +283,14 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
           return t >= dayStart.getTime() && t < dayEnd.getTime();
         })
         .reduce((s, o) => s + o.total, 0);
-      points.push({ label: String(d + 1), revenue: dayRevenue });
+      points.push({ label: String(d + 1), revenue: dayRevenue, date: cotonouDateString(dayStart) });
     }
 
     const rangeLabel = `${MONTH_LABELS_FR[monthStartWall.getUTCMonth()]} ${monthStartWall.getUTCFullYear()}`;
     return { view, offset: safeOffset, rangeLabel, points, canGoNext: safeOffset > 0 };
   }
 
-  // view === "annee"
+  // view === "annee" — points mensuels, pas de détail par jour (date: null)
   const nowWall = toCotonouWallClock(now);
   const targetYear = nowWall.getUTCFullYear() - safeOffset;
   const yearStart = fromCotonouWallClock(new Date(Date.UTC(targetYear, 0, 1)));
@@ -289,7 +303,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
     .lt("created_at", yearEnd.toISOString())
     .neq("status", "annulee");
 
-  const points = [];
+  const points: RevenueChartPoint[] = [];
   for (let m = 0; m < 12; m++) {
     const monthStart = fromCotonouWallClock(new Date(Date.UTC(targetYear, m, 1)));
     const monthEnd = fromCotonouWallClock(new Date(Date.UTC(targetYear, m + 1, 1)));
@@ -299,7 +313,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
         return t >= monthStart.getTime() && t < monthEnd.getTime();
       })
       .reduce((s, o) => s + o.total, 0);
-    points.push({ label: MONTH_LABELS_FR[m], revenue: monthRevenue });
+    points.push({ label: MONTH_LABELS_FR[m], revenue: monthRevenue, date: null });
   }
 
   return { view, offset: safeOffset, rangeLabel: String(targetYear), points, canGoNext: safeOffset > 0 };
@@ -548,7 +562,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
       const dayOrders = (orders ?? []).filter((o) => startOfDay(new Date(o.created_at)).getTime() === d.getTime());
       const dayRevenue = dayOrders.reduce((s, o) => s + o.total, 0);
       rows.push({
-        label: d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }),
+        label: formatCotonouDate(d, { day: "numeric", month: "short" }),
         orders: dayOrders.length,
         revenue: dayRevenue,
         costs: 0,
@@ -598,7 +612,10 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
 
   if (customRange) {
     const spanDays = Math.round((rangeEndExclusive!.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000));
-    label = `du ${new Date(customRange.start).toLocaleDateString("fr-FR")} au ${new Date(customRange.end).toLocaleDateString("fr-FR")}`;
+    // customRange.{start,end} sont des "YYYY-MM-DD" — new Date() les parse en
+    // minuit UTC ; timeZone: "UTC" explicite ici évite toute ambiguïté avec
+    // le fuseau du serveur au lieu de compter sur une coïncidence de valeurs par défaut.
+    label = `du ${new Date(customRange.start).toLocaleDateString("fr-FR", { timeZone: "UTC" })} au ${new Date(customRange.end).toLocaleDateString("fr-FR", { timeZone: "UTC" })}`;
     if (spanDays <= 31) bucketByDay(rangeStart, rangeEndExclusive!);
     else if (spanDays <= 366) bucketByMonth(rangeStart, rangeEndExclusive!);
     else bucketByYear(rangeStart, rangeEndExclusive!);
