@@ -178,12 +178,16 @@ async function sendSummaryOrClarification(staffPhone: string, sessionId: string,
     return;
   }
 
-  const itemsSummary = resolved.matchedItems.map((i) => `${i.quantity}x ${i.productName}`).join(", ");
   const summary = buildStaffLogSummaryMessage({
     clientName: resolved.clientName,
     clientPhone: resolved.clientPhone,
     isExistingClient: resolved.isExistingClient,
-    itemsSummary,
+    items: resolved.matchedItems.map((i) => ({
+      productName: i.productName,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      lineTotal: i.lineTotal,
+    })),
     total: resolved.finalTotal,
     location: resolved.locationText,
     driverName: resolved.matchedDriver?.name ?? null,

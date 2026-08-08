@@ -36,6 +36,7 @@ export interface Database {
           usual_address_lat: number | null;
           usual_address_lng: number | null;
           usual_delivery_fee: number | null;
+          notes: string | null;
           ai_active: boolean;
           created_at: string;
           updated_at: string;

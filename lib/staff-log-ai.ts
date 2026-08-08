@@ -1,6 +1,4 @@
-import Groq from "groq-sdk";
-
-const GROQ_MODEL = "llama-3.1-8b-instant";
+import { generateStructuredJson } from "@/lib/ai-provider";
 
 export interface StaffLogDraftItem {
   nom: string;
@@ -31,12 +29,6 @@ export function emptyStaffLogDraft(): StaffLogDraft {
  * ("non c'est 2000f pas 1500f", "ajoute un jus bissap").
  */
 export async function updateStaffLogDraft(previousDraft: StaffLogDraft, newMessage: string): Promise<StaffLogDraft | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    console.warn("[staff-log-ai] GROQ_API_KEY absente — extraction ignorée");
-    return null;
-  }
-
   const prompt = `Tu aides le staff du restaurant CHIVI (Cotonou, Bénin) à enregistrer, pour la comptabilité, une commande déjà servie/livrée décrite en langage libre (le client a déjà été livré, ce n'est qu'un enregistrement rétroactif).
 
 Voici ta compréhension ACTUELLE de la commande (JSON) :
@@ -57,16 +49,7 @@ Ce message est soit une description initiale, soit une correction/précision sur
 }`;
 
   try {
-    const groq = new Groq({ apiKey });
-    const completion = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      temperature: 0.1,
-      max_tokens: 600,
-      response_format: { type: "json_object" },
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const raw = completion.choices[0]?.message?.content?.trim();
+    const raw = await generateStructuredJson(prompt);
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as {

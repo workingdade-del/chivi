@@ -57,19 +57,19 @@ function fromCotonouWallClock(d: Date): Date {
   return new Date(d.getTime() - COTONOU_OFFSET_MS);
 }
 
-function startOfDay(d: Date) {
+export function startOfDay(d: Date) {
   const wall = toCotonouWallClock(d);
   wall.setUTCHours(0, 0, 0, 0);
   return fromCotonouWallClock(wall);
 }
-function startOfWeek(d: Date) {
+export function startOfWeek(d: Date) {
   const wall = toCotonouWallClock(d);
   wall.setUTCHours(0, 0, 0, 0);
   const day = wall.getUTCDay() === 0 ? 7 : wall.getUTCDay(); // lundi = 1
   wall.setUTCDate(wall.getUTCDate() - (day - 1));
   return fromCotonouWallClock(wall);
 }
-function startOfMonth(d: Date) {
+export function startOfMonth(d: Date) {
   const wall = toCotonouWallClock(d);
   wall.setUTCHours(0, 0, 0, 0);
   wall.setUTCDate(1);

@@ -6,6 +6,7 @@ import { formatFcfa } from "@/lib/format";
 import { STATUS_LABELS } from "@/lib/order-status";
 import { ClientNameEditor } from "@/components/admin/ClientNameEditor";
 import { ClientAddressEditor } from "@/components/admin/ClientAddressEditor";
+import { ClientNotesEditor } from "@/components/admin/ClientNotesEditor";
 
 export default async function AdminClientDetailPage({ params }: { params: { id: string } }) {
   const { profile, orders } = await getClientDetail(params.id);
@@ -63,6 +64,7 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
           usualAddressLng={profile.usual_address_lng}
           usualDeliveryFee={profile.usual_delivery_fee}
         />
+        <ClientNotesEditor clientId={profile.id} notes={profile.notes} />
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="font-bold text-[15px] text-ink mb-3.5">Historique des commandes</div>
           {orders.map((o) => {

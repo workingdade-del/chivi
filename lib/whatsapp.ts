@@ -686,12 +686,22 @@ export function buildStaffOrderOutOfZoneMessage(address: string): string {
   return `❌ L'adresse "${address}" semble en dehors de notre zone de livraison (Cotonou / Abomey-Calavi). Commande non créée — vérifie l'adresse avec le client.`;
 }
 
-/** Résumé de compréhension envoyé au staff pendant la conversation /commande-log, avant enregistrement définitif. */
+/** Quantité au-delà de laquelle on avertit explicitement plutôt que d'accepter silencieusement — incident réel (CHV-2086) : l'IA a confondu un prix unitaire (1200 FCFA) avec une quantité, produisant "1206x Atassi CHIVI" jamais repéré avant confirmation. */
+const STAFF_LOG_HIGH_QUANTITY_THRESHOLD = 20;
+
+/**
+ * Résumé de compréhension envoyé au staff pendant la conversation
+ * /commande-log, avant enregistrement définitif. Détaille TOUJOURS
+ * qté × prix unitaire par plat (jamais juste "nom - total") pour qu'une
+ * erreur de quantité saute aux yeux avant confirmation, et avertit
+ * explicitement si une quantité dépasse le seuil plutôt que de l'accepter
+ * silencieusement.
+ */
 export function buildStaffLogSummaryMessage(params: {
   clientName: string;
   clientPhone: string | null;
   isExistingClient: boolean;
-  itemsSummary: string;
+  items: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
   total: number;
   location: string | null;
   driverName: string | null;
@@ -699,7 +709,15 @@ export function buildStaffLogSummaryMessage(params: {
   const clientLine = params.clientPhone
     ? `Client : ${params.clientName} (${params.isExistingClient ? "client connu, " : ""}${params.clientPhone})`
     : `Client : ${params.clientName}`;
-  const lines = ["📋 J'ai compris :", clientLine, `Commande : ${params.itemsSummary}`, `Total : ${params.total.toLocaleString("fr-FR")} FCFA`];
+
+  const itemLines = params.items.map(
+    (i) => `${i.quantity}x ${i.productName} à ${i.unitPrice.toLocaleString("fr-FR")} FCFA = ${i.lineTotal.toLocaleString("fr-FR")} FCFA`
+  );
+  const warnings = params.items
+    .filter((i) => i.quantity > STAFF_LOG_HIGH_QUANTITY_THRESHOLD)
+    .map((i) => `⚠️ Quantité élevée (${i.quantity}x) pour "${i.productName}", vérifiez SVP`);
+
+  const lines = ["📋 J'ai compris :", clientLine, "Commande :", ...itemLines, ...warnings, `Total : ${params.total.toLocaleString("fr-FR")} FCFA`];
   if (params.location) lines.push(`Localisation : ${params.location}`);
   if (params.driverName) lines.push(`Livreur : ${params.driverName}`);
   lines.push("", "Je confirme et j'enregistre ? Répondez OUI ou précisez ce qui doit être corrigé.");

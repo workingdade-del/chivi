@@ -19,6 +19,7 @@ import { findBestMatch } from "@/lib/fuzzy-match";
 import { searchPlace } from "@/lib/nominatim";
 import { haversineKm, computeDeliveryFee, KITCHEN_ORIGIN } from "@/lib/distance";
 import { expireStaleLogSession, getActiveLogSession, startLogSession, continueLogSession } from "@/lib/staff-log";
+import { isBusinessQuestion, handleStaffQuestion } from "@/lib/staff-query";
 import { LOCATION_WINDOW_MINUTES, findRecentForwardedLocation } from "@/lib/staff-location";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
@@ -110,6 +111,16 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
 
   if (isNotifyTrigger(inboundText)) {
     await processStaffOrderCommand(supportPhone, inboundText);
+    return;
+  }
+
+  // Question business ("quel est le total du jour ?") plutôt qu'une
+  // commande à enregistrer — sans ce garde-fou, startLogSession
+  // l'absorberait à tort et démarrerait une session d'enregistrement.
+  // Vérifié seulement ici (aucune session /commande-log active, pas un
+  // "/commande") pour ne jamais interrompre une conversation déjà en cours.
+  if (isBusinessQuestion(inboundText)) {
+    await handleStaffQuestion(supportPhone, inboundText);
     return;
   }
 
