@@ -67,10 +67,14 @@ export function OrderItemsEditor({
   }, []);
 
   const productVariants = variants.filter((v) => v.product_id === selectedProduct);
+  const BASE_PRICE_VALUE = "__base_price__";
 
   function handleAdd() {
     const product = products.find((p) => p.id === selectedProduct);
     if (!product) return;
+    // BASE_PRICE_VALUE ne correspond jamais à un id réel de product_variants
+    // — find() renvoie undefined, donc variant=null et unitPrice retombe sur
+    // product.base_price, exactement le comportement voulu pour "Prix de base".
     const variant = productVariants.find((v) => v.id === selectedVariant) ?? null;
     const unitPrice = variant ? variant.price : product.base_price;
     const supplementRows = supplements.filter((s) => selectedSupplements.includes(s.id));
@@ -178,7 +182,13 @@ export function OrderItemsEditor({
               onChange={(e) => setSelectedVariant(e.target.value)}
               className="border-2 border-[#e6dcc4] rounded-xl px-3 py-2 text-sm"
             >
-              <option value="">Choisir une variante…</option>
+              <option value="">Choisir une option…</option>
+              {(() => {
+                const product = products.find((p) => p.id === selectedProduct);
+                return product ? (
+                  <option value={BASE_PRICE_VALUE}>Prix de base — {formatFcfa(product.base_price)}</option>
+                ) : null;
+              })()}
               {productVariants.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.name} — {formatFcfa(v.price)}
