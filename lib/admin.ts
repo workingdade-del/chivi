@@ -532,17 +532,9 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   if (ordersErr) console.error("[report] échec lecture orders de la période :", ordersErr.message);
   const orders = (ordersRaw ?? []) as unknown as PeriodOrderRow[];
 
-  let expensesQuery = supabase.from("expenses").select("amount, expense_date").gte("expense_date", rangeStart.toISOString().slice(0, 10));
-  if (rangeEndExclusive) expensesQuery = expensesQuery.lt("expense_date", rangeEndExclusive.toISOString().slice(0, 10));
-  const { data: expenses, error: expensesErr } = await expensesQuery;
-  if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
-
   // Sous-total hors livraison : les frais de livraison sont perçus au nom du
   // prestataire livreur externe, jamais un revenu/coût/bénéfice CHIVI.
   const revenue = (orders ?? []).reduce((s, o) => s + o.subtotal, 0);
-  const costs = (expenses ?? []).reduce((s, e) => s + e.amount, 0);
-  const profit = revenue - costs;
-  const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
 
   const periodItems = orders.flatMap((o) => o.order_items);
   const costMaps = await loadCostMaps(supabase);
@@ -552,6 +544,21 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     label: item.variant_name ? `${item.product_name} — ${item.variant_name}` : item.product_name,
   }));
   const dishMarginRows = marginByDish(namedItems, costMaps);
+
+  // "Coûts (denrées)" = coût ingrédients/emballage réel des plats vendus
+  // (product_costs / product_variants, même logique que "Marge par plat"
+  // ci-dessous) — PAS les dépenses manuelles (loyer, salaires...) qui vivent
+  // dans /admin/expenses et le compte Finance "Dépenses" séparément. Avant ce
+  // fix, ce total venait de la table expenses (sans lien avec les denrées)
+  // pendant que les lignes du tableau détaillé étaient câblées en dur à 0 —
+  // trois sources de vérité différentes qui ne pouvaient jamais se recouper.
+  const costs = dishMarginSummary.knownCost;
+  const profit = revenue - costs;
+  const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+
+  function bucketCosts(bucketOrders: PeriodOrderRow[]): number {
+    return summarizeMargins(bucketOrders.flatMap((o) => o.order_items), costMaps).knownCost;
+  }
 
   let rows: ReportRow[] = [];
   let rowHead = "Période";
@@ -563,12 +570,13 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
       const d = new Date(day);
       const dayOrders = (orders ?? []).filter((o) => startOfDay(new Date(o.created_at)).getTime() === d.getTime());
       const dayRevenue = dayOrders.reduce((s, o) => s + o.subtotal, 0);
+      const dayCosts = bucketCosts(dayOrders);
       rows.push({
         label: formatCotonouDate(d, { day: "numeric", month: "short" }),
         orders: dayOrders.length,
         revenue: dayRevenue,
-        costs: 0,
-        profit: dayRevenue,
+        costs: dayCosts,
+        profit: dayRevenue - dayCosts,
       });
     }
   }
@@ -587,7 +595,8 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         return t >= monthStart.getTime() && t < monthEnd.getTime();
       });
       const monthRevenue = monthOrders.reduce((s, o) => s + o.subtotal, 0);
-      rows.push({ label: `${MONTH_LABELS_FR[m]} ${y}`, orders: monthOrders.length, revenue: monthRevenue, costs: 0, profit: monthRevenue });
+      const monthCosts = bucketCosts(monthOrders);
+      rows.push({ label: `${MONTH_LABELS_FR[m]} ${y}`, orders: monthOrders.length, revenue: monthRevenue, costs: monthCosts, profit: monthRevenue - monthCosts });
       m++;
       if (m > 11) {
         m = 0;
@@ -608,7 +617,8 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         return t >= yearStart.getTime() && t < yearEnd.getTime();
       });
       const yearRevenue = yearOrders.reduce((s, o) => s + o.subtotal, 0);
-      rows.push({ label: String(y), orders: yearOrders.length, revenue: yearRevenue, costs: 0, profit: yearRevenue });
+      const yearCosts = bucketCosts(yearOrders);
+      rows.push({ label: String(y), orders: yearOrders.length, revenue: yearRevenue, costs: yearCosts, profit: yearRevenue - yearCosts });
     }
   }
 
@@ -630,7 +640,8 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         return h >= part.start && h < part.end;
       });
       const partRevenue = partOrders.reduce((s, o) => s + o.subtotal, 0);
-      return { label: part.label, orders: partOrders.length, revenue: partRevenue, costs: 0, profit: partRevenue };
+      const partCosts = bucketCosts(partOrders);
+      return { label: part.label, orders: partOrders.length, revenue: partRevenue, costs: partCosts, profit: partRevenue - partCosts };
     });
   } else if (period === "semaine") {
     label = "cette semaine";
@@ -640,8 +651,16 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   } else if (period === "mois") {
     rowHead = "Semaine";
     label = "ce mois";
-    for (let w = 0; w < 5; w++) {
-      const weekStart = new Date(rangeStart);
+    // Semaines calendaires Lundi→Dimanche, cohérentes avec le découpage du
+    // graphique Dashboard (getRevenueChart) — pas un pavage fixe "jour 1 à
+    // jour 7" qui ne correspond à aucune semaine réelle (l'ancien découpage
+    // faisait tomber le dernier jour d'une vraie semaine Lundi-Dimanche dans
+    // la ligne "Semaine 2" à tort). La première semaine peut démarrer avant
+    // le 1er du mois (son lundi réel) — normal, la semaine 1 y est alors
+    // partielle, seuls les jours du mois en cours sont dans `orders`.
+    const firstMonday = startOfWeek(rangeStart);
+    for (let w = 0; w < 6; w++) {
+      const weekStart = new Date(firstMonday);
       weekStart.setDate(weekStart.getDate() + w * 7);
       if (weekStart > new Date()) break;
       const weekEnd = new Date(weekStart);
@@ -651,7 +670,8 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         return t >= weekStart && t < weekEnd;
       });
       const weekRevenue = weekOrders.reduce((s, o) => s + o.subtotal, 0);
-      rows.push({ label: `Semaine ${w + 1}`, orders: weekOrders.length, revenue: weekRevenue, costs: 0, profit: weekRevenue });
+      const weekCosts = bucketCosts(weekOrders);
+      rows.push({ label: `Semaine ${w + 1}`, orders: weekOrders.length, revenue: weekRevenue, costs: weekCosts, profit: weekRevenue - weekCosts });
     }
   } else {
     label = "cette année";

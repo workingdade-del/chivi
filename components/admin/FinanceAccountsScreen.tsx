@@ -15,12 +15,33 @@ const TYPE_LABELS: Record<string, string> = {
   personnalise: "Personnalisé",
 };
 
-export function FinanceAccountsScreen({ accounts }: { accounts: FinanceAccountRow[] }) {
+export function FinanceAccountsScreen({
+  accounts,
+  soldeNet,
+  totalDettes,
+}: {
+  accounts: FinanceAccountRow[];
+  soldeNet: number;
+  totalDettes: number;
+}) {
   const router = useRouter();
   const [showNewAccount, setShowNewAccount] = useState(false);
 
   return (
     <div>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="bg-maroon rounded-2xl p-5 text-white">
+          <div className="text-xs text-cream/70 uppercase tracking-wide">Solde net</div>
+          <div className="font-mega text-3xl text-gold mt-2.5">{formatFcfa(soldeNet)}</div>
+          <div className="text-xs text-cream mt-1.5">Ventes − Dépenses, hors compte Dettes</div>
+        </div>
+        <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
+          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Total dettes</div>
+          <div className={`font-mega text-3xl mt-2.5 ${totalDettes >= 0 ? "text-ink" : "text-chilli"}`}>{formatFcfa(totalDettes)}</div>
+          <div className="text-xs text-[#9a8b78] mt-1.5">Solde du compte Dettes</div>
+        </div>
+      </div>
+
       <div className="flex justify-end mb-4">
         <button
           onClick={() => setShowNewAccount(true)}
