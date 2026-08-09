@@ -25,7 +25,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
       <div className="grid grid-cols-4 gap-4">
         <KpiCard label="Commandes" value={String(data.ordersToday)} icon={Package} iconBg="rgba(255,182,0,.16)" iconColor="#a6740a" note={`${data.ordersToday} aujourd'hui`} noteColor="#1b7a44" />
         <KpiCard label="Revenus" value={formatFcfa(data.revenueToday)} icon={TrendingUp} iconBg="#e7f6ec" iconColor="#1b7a44" note="Aujourd'hui" noteColor="#1b7a44" />
-        <KpiCard label="Coûts" value={formatFcfa(data.costsToday)} icon={Receipt} iconBg="rgba(231,50,35,.13)" iconColor="#c0392b" note="Denrées + livraison" noteColor="#9a8b78" />
+        <KpiCard label="Coûts" value={formatFcfa(data.costsToday)} icon={Receipt} iconBg="rgba(231,50,35,.13)" iconColor="#c0392b" note="Denrées" noteColor="#9a8b78" />
         <KpiCard
           label="Bénéfice"
           value={formatFcfa(data.profitToday)}

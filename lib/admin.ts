@@ -120,11 +120,14 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const { data: todayOrders } = await supabase
     .from("orders")
-    .select("total, status, created_at")
+    .select("subtotal, status, created_at")
     .gte("created_at", today.toISOString())
     .neq("status", "annulee");
 
-  const revenueToday = (todayOrders ?? []).reduce((s, o) => s + o.total, 0);
+  // Le sous-total (hors livraison) est le vrai chiffre d'affaires CHIVI —
+  // les frais de livraison sont perçus au nom du prestataire livreur externe,
+  // ce n'est pas de l'argent CHIVI et ça ne doit apparaître dans aucun total agrégé.
+  const revenueToday = (todayOrders ?? []).reduce((s, o) => s + o.subtotal, 0);
   const ordersToday = todayOrders?.length ?? 0;
 
   const { data: expensesToday } = await supabase
@@ -235,7 +238,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
 
     const { data } = await supabase
       .from("orders")
-      .select("total, created_at")
+      .select("subtotal, created_at")
       .gte("created_at", start.toISOString())
       .lt("created_at", endExclusive.toISOString())
       .neq("status", "annulee");
@@ -246,7 +249,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
       day.setDate(day.getDate() + i);
       const dayRevenue = (data ?? [])
         .filter((o) => startOfDay(new Date(o.created_at)).getTime() === day.getTime())
-        .reduce((s, o) => s + o.total, 0);
+        .reduce((s, o) => s + o.subtotal, 0);
       points.push({ label: WEEKDAY_LABELS_FR[i], revenue: dayRevenue, date: cotonouDateString(day) });
     }
 
@@ -267,7 +270,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
 
     const { data } = await supabase
       .from("orders")
-      .select("total, created_at")
+      .select("subtotal, created_at")
       .gte("created_at", start.toISOString())
       .lt("created_at", end.toISOString())
       .neq("status", "annulee");
@@ -282,7 +285,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
           const t = new Date(o.created_at).getTime();
           return t >= dayStart.getTime() && t < dayEnd.getTime();
         })
-        .reduce((s, o) => s + o.total, 0);
+        .reduce((s, o) => s + o.subtotal, 0);
       points.push({ label: String(d + 1), revenue: dayRevenue, date: cotonouDateString(dayStart) });
     }
 
@@ -298,7 +301,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
 
   const { data } = await supabase
     .from("orders")
-    .select("total, created_at")
+    .select("subtotal, created_at")
     .gte("created_at", yearStart.toISOString())
     .lt("created_at", yearEnd.toISOString())
     .neq("status", "annulee");
@@ -312,7 +315,7 @@ export async function getRevenueChart(view: ChartView, offset: number): Promise<
         const t = new Date(o.created_at).getTime();
         return t >= monthStart.getTime() && t < monthEnd.getTime();
       })
-      .reduce((s, o) => s + o.total, 0);
+      .reduce((s, o) => s + o.subtotal, 0);
     points.push({ label: MONTH_LABELS_FR[m], revenue: monthRevenue, date: null });
   }
 
@@ -467,7 +470,6 @@ export interface ReportData {
   revenue: number;
   orders: number;
   costs: number;
-  deliveryCosts: number;
   profit: number;
   margin: number;
   rows: ReportRow[];
@@ -513,8 +515,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     line_total: number;
   };
   interface PeriodOrderRow {
-    total: number;
-    delivery_fee: number;
+    subtotal: number;
     created_at: string;
     order_items: PeriodOrderItem[];
   }
@@ -522,7 +523,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   let ordersQuery = supabase
     .from("orders")
     .select(
-      "total, delivery_fee, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
+      "subtotal, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
     )
     .gte("created_at", rangeStart.toISOString())
     .neq("status", "annulee");
@@ -536,8 +537,9 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   const { data: expenses, error: expensesErr } = await expensesQuery;
   if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
 
-  const revenue = (orders ?? []).reduce((s, o) => s + o.total, 0);
-  const deliveryCosts = (orders ?? []).reduce((s, o) => s + o.delivery_fee, 0);
+  // Sous-total hors livraison : les frais de livraison sont perçus au nom du
+  // prestataire livreur externe, jamais un revenu/coût/bénéfice CHIVI.
+  const revenue = (orders ?? []).reduce((s, o) => s + o.subtotal, 0);
   const costs = (expenses ?? []).reduce((s, e) => s + e.amount, 0);
   const profit = revenue - costs;
   const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
@@ -560,7 +562,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     for (let day = new Date(from); day < toExclusive; day.setDate(day.getDate() + 1)) {
       const d = new Date(day);
       const dayOrders = (orders ?? []).filter((o) => startOfDay(new Date(o.created_at)).getTime() === d.getTime());
-      const dayRevenue = dayOrders.reduce((s, o) => s + o.total, 0);
+      const dayRevenue = dayOrders.reduce((s, o) => s + o.subtotal, 0);
       rows.push({
         label: formatCotonouDate(d, { day: "numeric", month: "short" }),
         orders: dayOrders.length,
@@ -584,7 +586,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         const t = new Date(o.created_at).getTime();
         return t >= monthStart.getTime() && t < monthEnd.getTime();
       });
-      const monthRevenue = monthOrders.reduce((s, o) => s + o.total, 0);
+      const monthRevenue = monthOrders.reduce((s, o) => s + o.subtotal, 0);
       rows.push({ label: `${MONTH_LABELS_FR[m]} ${y}`, orders: monthOrders.length, revenue: monthRevenue, costs: 0, profit: monthRevenue });
       m++;
       if (m > 11) {
@@ -605,7 +607,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         const t = new Date(o.created_at).getTime();
         return t >= yearStart.getTime() && t < yearEnd.getTime();
       });
-      const yearRevenue = yearOrders.reduce((s, o) => s + o.total, 0);
+      const yearRevenue = yearOrders.reduce((s, o) => s + o.subtotal, 0);
       rows.push({ label: String(y), orders: yearOrders.length, revenue: yearRevenue, costs: 0, profit: yearRevenue });
     }
   }
@@ -627,7 +629,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         const h = new Date(o.created_at).getHours();
         return h >= part.start && h < part.end;
       });
-      const partRevenue = partOrders.reduce((s, o) => s + o.total, 0);
+      const partRevenue = partOrders.reduce((s, o) => s + o.subtotal, 0);
       return { label: part.label, orders: partOrders.length, revenue: partRevenue, costs: 0, profit: partRevenue };
     });
   } else if (period === "semaine") {
@@ -648,7 +650,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
         const t = new Date(o.created_at);
         return t >= weekStart && t < weekEnd;
       });
-      const weekRevenue = weekOrders.reduce((s, o) => s + o.total, 0);
+      const weekRevenue = weekOrders.reduce((s, o) => s + o.subtotal, 0);
       rows.push({ label: `Semaine ${w + 1}`, orders: weekOrders.length, revenue: weekRevenue, costs: 0, profit: weekRevenue });
     }
   } else {
@@ -664,7 +666,6 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     revenue,
     orders: orders?.length ?? 0,
     costs,
-    deliveryCosts,
     profit,
     margin,
     rows,

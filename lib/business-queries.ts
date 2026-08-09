@@ -27,8 +27,10 @@ export interface RevenueSummaryResult {
 export async function queryRevenueSummary(period: QueryPeriod): Promise<RevenueSummaryResult> {
   const supabase = createServiceClient();
   const start = rangeStartFor(period);
-  const { data } = await supabase.from("orders").select("total").gte("created_at", start.toISOString()).neq("status", "annulee");
-  const revenue = (data ?? []).reduce((s, o) => s + o.total, 0);
+  // subtotal = hors frais de livraison (perçus au nom du prestataire livreur
+  // externe, jamais un revenu CHIVI).
+  const { data } = await supabase.from("orders").select("subtotal").gte("created_at", start.toISOString()).neq("status", "annulee");
+  const revenue = (data ?? []).reduce((s, o) => s + o.subtotal, 0);
   return { period, revenue, orderCount: data?.length ?? 0 };
 }
 

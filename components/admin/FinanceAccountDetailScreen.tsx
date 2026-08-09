@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { X, Trash2, ArrowRightLeft, Plus } from "lucide-react";
+import { X, Trash2, ArrowRightLeft, Plus, MoreVertical } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
@@ -25,6 +25,8 @@ export function FinanceAccountDetailScreen({
   const router = useRouter();
   const [showNewTx, setShowNewTx] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [moveTx, setMoveTx] = useState<FinanceTransactionRow | null>(null);
   const [filterType, setFilterType] = useState<"all" | "entree" | "sortie">("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterFrom, setFilterFrom] = useState("");
@@ -126,13 +128,39 @@ export function FinanceAccountDetailScreen({
               {t.type === "entree" ? "+" : "−"}
               {formatFcfa(t.amount)}
             </span>
-            {t.source_type === "manual" ? (
-              <button onClick={() => handleDelete(t)} aria-label="Supprimer" className="text-[#c9bda6]">
-                <Trash2 size={15} />
+            <div className="relative">
+              <button
+                onClick={() => setOpenMenuId(openMenuId === t.id ? null : t.id)}
+                aria-label="Actions"
+                className="text-[#c9bda6]"
+              >
+                <MoreVertical size={15} />
               </button>
-            ) : (
-              <span />
-            )}
+              {openMenuId === t.id && (
+                <div className="absolute right-0 top-6 z-10 bg-white border border-[#e6dcc4] rounded-xl shadow-lg py-1 w-52">
+                  <button
+                    onClick={() => {
+                      setOpenMenuId(null);
+                      setMoveTx(t);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-[13px] text-[#4a4137] hover:bg-[#faf4e8] flex items-center gap-2"
+                  >
+                    <ArrowRightLeft size={13} /> Déplacer vers un autre compte
+                  </button>
+                  {t.source_type === "manual" && (
+                    <button
+                      onClick={() => {
+                        setOpenMenuId(null);
+                        handleDelete(t);
+                      }}
+                      className="w-full text-left px-3.5 py-2 text-[13px] text-chilli hover:bg-[#faf4e8] flex items-center gap-2"
+                    >
+                      <Trash2 size={13} /> Supprimer
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         ))}
         {filtered.length === 0 && <div className="px-5 py-10 text-center text-[#9a8b78] text-sm">Aucune transaction.</div>}
@@ -155,6 +183,17 @@ export function FinanceAccountDetailScreen({
           onClose={() => setShowTransfer(false)}
           onCreated={() => {
             setShowTransfer(false);
+            router.refresh();
+          }}
+        />
+      )}
+      {moveTx && (
+        <MoveTransactionModal
+          tx={moveTx}
+          otherAccounts={otherAccounts}
+          onClose={() => setMoveTx(null)}
+          onMoved={() => {
+            setMoveTx(null);
             router.refresh();
           }}
         />
@@ -328,6 +367,70 @@ function TransferModal({
           className="w-full bg-maroon text-gold font-bold text-sm rounded-xl px-3.5 py-3 disabled:opacity-50"
         >
           {busy ? "Virement…" : "Confirmer le virement"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MoveTransactionModal({
+  tx,
+  otherAccounts,
+  onClose,
+  onMoved,
+}: {
+  tx: FinanceTransactionRow;
+  otherAccounts: AccountOption[];
+  onClose: () => void;
+  onMoved: () => void;
+}) {
+  const [toAccountId, setToAccountId] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function handleMove() {
+    if (!toAccountId) return;
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("finance_transactions").update({ account_id: toAccountId }).eq("id", tx.id);
+    setBusy(false);
+    if (error) {
+      showToast(`Échec du déplacement : ${error.message}`, "error");
+      return;
+    }
+    showToast("Transaction déplacée");
+    onMoved();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-ink text-lg">Déplacer vers un autre compte</h3>
+          <button onClick={onClose} className="text-[#9a8b78]">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="text-[13px] text-[#6d6358] mb-3.5 bg-[#faf4e8] rounded-xl px-3.5 py-2.5">
+          {tx.description || "Transaction"} — {formatFcfa(tx.amount)}
+        </div>
+
+        <label className="block text-xs font-bold text-[#9a8b78] mb-1.5">Compte destination</label>
+        <select value={toAccountId} onChange={(e) => setToAccountId(e.target.value)} className="w-full border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2.5 text-sm mb-4">
+          <option value="">Choisir…</option>
+          {otherAccounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={handleMove}
+          disabled={busy || !toAccountId}
+          className="w-full bg-maroon text-gold font-bold text-sm rounded-xl px-3.5 py-3 disabled:opacity-50"
+        >
+          {busy ? "Déplacement…" : "Déplacer"}
         </button>
       </div>
     </div>

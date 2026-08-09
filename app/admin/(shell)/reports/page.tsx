@@ -70,9 +70,8 @@ export default async function AdminReportsPage({
           <div className="text-xs text-cream mt-1.5">{rep.orders} commandes</div>
         </div>
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
-          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Coûts (denrées + livraison)</div>
+          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Coûts (denrées)</div>
           <div className="font-mega text-3xl text-ink mt-2.5">{formatFcfa(rep.costs)}</div>
-          <div className="text-xs text-[#9a8b78] mt-1.5">dont {formatFcfa(rep.deliveryCosts)} livraison</div>
         </div>
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Bénéfice net</div>
