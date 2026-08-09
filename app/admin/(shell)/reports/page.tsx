@@ -72,11 +72,29 @@ export default async function AdminReportsPage({
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Coûts (denrées)</div>
           <div className="font-mega text-3xl text-ink mt-2.5">{formatFcfa(rep.costs)}</div>
+          <div className="text-xs text-[#9a8b78] mt-1.5">Ingrédients + emballage des plats vendus</div>
         </div>
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
-          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Bénéfice net</div>
-          <div className="font-mega text-3xl text-status-green-deep mt-2.5">{formatFcfa(rep.profit)}</div>
+          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Marge brute (ingrédients)</div>
+          <div className="font-mega text-3xl text-status-green-deep mt-2.5">{formatFcfa(rep.grossMargin)}</div>
           <div className="text-xs text-status-green-deep mt-1.5 font-semibold">Marge {rep.margin}%</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mt-4">
+        <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
+          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Dépenses générales</div>
+          <div className="font-mega text-3xl text-ink mt-2.5">{formatFcfa(rep.expenses)}</div>
+          <div className="text-xs text-[#9a8b78] mt-1.5">Loyer, salaires, achats divers (hors denrées)</div>
+        </div>
+        <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
+          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Bénéfice net (avec charges)</div>
+          <div className={`font-mega text-3xl mt-2.5 ${rep.netProfit >= 0 ? "text-status-green-deep" : "text-chilli"}`}>
+            {formatFcfa(rep.netProfit)}
+          </div>
+          <div className={`text-xs mt-1.5 font-semibold ${rep.netProfit >= 0 ? "text-status-green-deep" : "text-chilli"}`}>
+            Marge nette {rep.netMargin}%
+          </div>
         </div>
       </div>
 
@@ -88,8 +106,8 @@ export default async function AdminReportsPage({
           <span>{rep.rowHead}</span>
           <span>Commandes</span>
           <span>Revenus</span>
-          <span>Coûts</span>
-          <span>Bénéfice</span>
+          <span>Coûts (denrées)</span>
+          <span>Marge brute</span>
         </div>
         {rep.rows.map((r, i) => (
           <div

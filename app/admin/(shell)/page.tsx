@@ -25,23 +25,23 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
       <div className="grid grid-cols-4 gap-4">
         <KpiCard label="Commandes" value={String(data.ordersToday)} icon={Package} iconBg="rgba(255,182,0,.16)" iconColor="#a6740a" note={`${data.ordersToday} aujourd'hui`} noteColor="#1b7a44" />
         <KpiCard label="Revenus" value={formatFcfa(data.revenueToday)} icon={TrendingUp} iconBg="#e7f6ec" iconColor="#1b7a44" note="Aujourd'hui" noteColor="#1b7a44" />
-        <KpiCard label="Coûts" value={formatFcfa(data.costsToday)} icon={Receipt} iconBg="rgba(231,50,35,.13)" iconColor="#c0392b" note="Denrées" noteColor="#9a8b78" />
+        <KpiCard label="Dépenses" value={formatFcfa(data.costsToday)} icon={Receipt} iconBg="rgba(231,50,35,.13)" iconColor="#c0392b" note="Générales (hors denrées)" noteColor="#9a8b78" />
         <KpiCard
-          label="Bénéfice"
+          label="Bénéfice net"
           value={formatFcfa(data.profitToday)}
           icon={PiggyBank}
           iconBg="#f4ead2"
           iconColor="#a6740a"
-          note={`Marge ${data.marginToday}%`}
+          note={`Avec charges — marge ${data.marginToday}%`}
           noteColor="#1b7a44"
         />
       </div>
 
       <div className="bg-white border border-[#ece2cd] rounded-2xl p-5 mt-4 flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Marge plats (coûts ingrédients)</div>
+          <div className="text-xs text-[#9a8b78] uppercase tracking-wide">Marge brute (ingrédients)</div>
           <div className="font-mega text-2xl text-maroon-deep mt-1.5">{formatFcfa(data.dishMarginToday)}</div>
-          <div className="text-xs text-[#9a8b78] mt-1">Calculée en temps réel depuis les coûts renseignés dans Gestion Menu — distincte du « Bénéfice » ci-dessus, basé sur les dépenses saisies.</div>
+          <div className="text-xs text-[#9a8b78] mt-1">Revenus - coût ingrédients/emballage (Gestion Menu), sans les dépenses générales — distincte du « Bénéfice net » ci-dessus, qui les inclut.</div>
         </div>
         {data.dishMarginCoveragePct < 90 && (
           <div className="text-[13px] text-[#a6740a] bg-[#fff6e5] border-l-[3px] border-amber rounded-lg px-3.5 py-2.5 max-w-sm leading-snug">

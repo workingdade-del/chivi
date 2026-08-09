@@ -469,11 +469,20 @@ export interface ReportData {
   rowHead: string;
   revenue: number;
   orders: number;
+  /** Coût ingrédients/emballage des plats vendus (product_costs/product_variants). */
   costs: number;
-  profit: number;
+  /** Marge brute = revenue - costs (denrées). Ne tient PAS compte des dépenses générales. */
+  grossMargin: number;
+  /** % de marge brute sur le revenu. */
   margin: number;
+  /** Dépenses générales saisies manuellement (loyer, salaires, achats divers — table expenses), distinctes du coût ingrédients ci-dessus. */
+  expenses: number;
+  /** Bénéfice net = grossMargin - expenses. */
+  netProfit: number;
+  /** % de bénéfice net sur le revenu. */
+  netMargin: number;
   rows: ReportRow[];
-  /** Marge plats (coûts ingrédients/emballage), recalculée en temps réel — distincte de profit/margin ci-dessus (basés sur les dépenses saisies). */
+  /** Marge plats (coûts ingrédients/emballage), recalculée en temps réel — même logique que costs/grossMargin ci-dessus, présentée par plat. */
   dishMargin: number;
   dishMarginCoveragePct: number;
   dishMarginRows: DishMarginRow[];
@@ -532,6 +541,12 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   if (ordersErr) console.error("[report] échec lecture orders de la période :", ordersErr.message);
   const orders = (ordersRaw ?? []) as unknown as PeriodOrderRow[];
 
+  let expensesQuery = supabase.from("expenses").select("amount, expense_date").gte("expense_date", rangeStart.toISOString().slice(0, 10));
+  if (rangeEndExclusive) expensesQuery = expensesQuery.lt("expense_date", rangeEndExclusive.toISOString().slice(0, 10));
+  const { data: expensesRaw, error: expensesErr } = await expensesQuery;
+  if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
+  const expenses = (expensesRaw ?? []).reduce((s, e) => s + e.amount, 0);
+
   // Sous-total hors livraison : les frais de livraison sont perçus au nom du
   // prestataire livreur externe, jamais un revenu/coût/bénéfice CHIVI.
   const revenue = (orders ?? []).reduce((s, o) => s + o.subtotal, 0);
@@ -553,8 +568,13 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   // pendant que les lignes du tableau détaillé étaient câblées en dur à 0 —
   // trois sources de vérité différentes qui ne pouvaient jamais se recouper.
   const costs = dishMarginSummary.knownCost;
-  const profit = revenue - costs;
-  const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+  const grossMargin = revenue - costs;
+  const margin = revenue > 0 ? Math.round((grossMargin / revenue) * 100) : 0;
+  // Bénéfice net = marge brute - dépenses générales (loyer, salaires, achats
+  // divers saisis manuellement) — distinct de la marge brute ci-dessus, qui
+  // ne tient compte que du coût des ingrédients.
+  const netProfit = grossMargin - expenses;
+  const netMargin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
 
   function bucketCosts(bucketOrders: PeriodOrderRow[]): number {
     return summarizeMargins(bucketOrders.flatMap((o) => o.order_items), costMaps).knownCost;
@@ -686,8 +706,11 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     revenue,
     orders: orders?.length ?? 0,
     costs,
-    profit,
+    grossMargin,
     margin,
+    expenses,
+    netProfit,
+    netMargin,
     rows,
     dishMargin: dishMarginSummary.knownMargin,
     dishMarginCoveragePct: dishMarginSummary.coveragePct,
