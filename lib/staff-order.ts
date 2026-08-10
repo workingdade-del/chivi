@@ -104,12 +104,15 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
   await expireStaleLogSession(supportPhone);
 
   const activeLogSession = await getActiveLogSession(supportPhone);
+  console.log("[staff-order] dispatch", { supportPhone, inboundText, hasActiveLogSession: !!activeLogSession, sessionId: activeLogSession?.id ?? null });
   if (activeLogSession) {
+    console.log("[staff-order] dispatch -> continueLogSession (session active)", { supportPhone, sessionId: activeLogSession.id });
     await continueLogSession(supportPhone, activeLogSession, inboundText);
     return;
   }
 
   if (isNotifyTrigger(inboundText)) {
+    console.log("[staff-order] dispatch -> processStaffOrderCommand (/commande)", { supportPhone });
     await processStaffOrderCommand(supportPhone, inboundText);
     return;
   }
@@ -119,10 +122,18 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
   // l'absorberait à tort et démarrerait une session d'enregistrement.
   // Vérifié seulement ici (aucune session /commande-log active, pas un
   // "/commande") pour ne jamais interrompre une conversation déjà en cours.
+  // NOTE : si une session /commande-log EST active, ce check-ci n'est jamais
+  // atteint (le branchement au-dessus a déjà rendu la main) — c'est
+  // continueLogSession() qui refait le même test dans ce cas (voir
+  // lib/staff-log.ts), pour qu'une question business puisse interrompre une
+  // commande en cours sans corrompre son état.
   if (isBusinessQuestion(inboundText)) {
+    console.log("[staff-order] dispatch -> handleStaffQuestion (question business)", { supportPhone });
     await handleStaffQuestion(supportPhone, inboundText);
     return;
   }
+
+  console.log("[staff-order] dispatch -> startLogSession (nouvelle commande)", { supportPhone });
 
   // Tout le reste (texte libre OU audio transcrit) est traité comme une
   // tentative de description de commande à enregistrer. Ce numéro n'est

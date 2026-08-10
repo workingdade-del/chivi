@@ -3,6 +3,7 @@ import { sendWhatsappText, extractMessageId, normalizePhone, buildStaffLogSummar
 import { updateStaffLogDraft, emptyStaffLogDraft, type StaffLogDraft } from "@/lib/staff-log-ai";
 import { findBestMatch } from "@/lib/fuzzy-match";
 import { findRecentForwardedLocation } from "@/lib/staff-location";
+import { isBusinessQuestion, handleStaffQuestion } from "@/lib/staff-query";
 
 /** Au-delà de cette inactivité, une session /commande-log en cours est abandonnée silencieusement (pas de message, contrairement au reste du flow). */
 const STALE_LOG_SESSION_MINUTES = 15;
@@ -84,8 +85,18 @@ interface ResolvedDraft {
 async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
   const supabase = createServiceClient();
 
-  const { data: products } = await supabase.from("products").select("id, name, base_price").eq("is_available", true);
-  const { data: variantRows } = await supabase.from("product_variants").select("id, product_id, name, price").eq("is_available", true);
+  // Repli défensif : si l'IA n'a pas isolé de prix par plat (prix_unitaire)
+  // mais qu'un total global EST donné pour une commande à un seul article en
+  // quantité 1, ce total est sans ambiguïté le prix unitaire de cet article
+  // — on ne dépend pas uniquement du bon respect du prompt par le modèle
+  // (ex réel : "1x Atassi Chivi variante de 2000 ... Total: 2000").
+  if (draft.plats.length === 1 && draft.plats[0].quantite === 1 && draft.plats[0].prixUnitaire == null && draft.totalFcfa != null) {
+    draft = { ...draft, plats: [{ ...draft.plats[0], prixUnitaire: draft.totalFcfa }] };
+  }
+
+  const { data: products } = await supabase.from("products").select("id, name, base_price").eq("is_available", true).order("id");
+  const { data: variantRows } = await supabase.from("product_variants").select("id, product_id, name, price").eq("is_available", true).order("id");
+  console.log("[staff-log] resolveDraft — entrée", { draft });
   const matchedItems: ResolvedItem[] = [];
   const unmatchedItemNames: string[] = [];
   for (const plat of draft.plats) {
@@ -142,8 +153,14 @@ async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
       // Aucun numéro donné : on cherche si ce nom correspond à un client déjà
       // connu (seuil élevé — un faux positif associerait la commande au
       // mauvais client). Sinon il faudra demander le numéro (nouveau client).
-      const { data: profiles } = await supabase.from("profiles").select("id, whatsapp_phone, full_name").not("full_name", "is", null);
+      // ORDER BY explicite : sans lui, Postgres ne garantit AUCUN ordre de
+      // retour stable, donc si deux clients ont un nom proche (ex: deux
+      // "Abiola"), findBestMatch pouvait retomber sur un profil DIFFÉRENT
+      // d'un appel à l'autre — bug réel observé (même conversation, même
+      // client, numéro de téléphone différent entre deux tours).
+      const { data: profiles } = await supabase.from("profiles").select("id, whatsapp_phone, full_name").not("full_name", "is", null).order("id");
       const match = findBestMatch(draft.clientNom, profiles ?? [], (p) => p.full_name ?? "", 0.75);
+      console.log("[staff-log] resolveDraft — matching client par nom", { clientNom: draft.clientNom, matchScore: match?.score ?? null, matchedProfileId: match?.item.id ?? null, matchedPhone: match?.item.whatsapp_phone ?? null });
       if (match) {
         clientPhone = match.item.whatsapp_phone;
         clientProfileId = match.item.id;
@@ -152,7 +169,7 @@ async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
     }
   }
 
-  const { data: drivers } = await supabase.from("drivers").select("id, name, phone").eq("is_active", true);
+  const { data: drivers } = await supabase.from("drivers").select("id, name, phone").eq("is_active", true).order("id");
   let matchedDriver: { id: string; name: string; phone: string } | null = null;
   if (draft.livreurTel) {
     matchedDriver = (drivers ?? []).find((d) => normalizePhone(d.phone) === normalizePhone(draft.livreurTel!)) ?? null;
@@ -166,6 +183,18 @@ async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
   if (draft.plats.length === 0) issues.push("ce qui a été commandé");
   if (unmatchedItemNames.length) issues.push(`le(s) plat(s) suivant(s) non reconnu(s) sur notre menu : ${unmatchedItemNames.join(", ")}`);
   if (draft.clientNom && !clientPhone) issues.push("le numéro du client (nouveau client, jamais vu — sinon précise juste que c'est un client connu)");
+
+  console.log("[staff-log] resolveDraft — résultat", {
+    ready: issues.length === 0,
+    clientName: draft.clientNom,
+    clientPhone,
+    clientProfileId,
+    isExistingClient,
+    matchedItems,
+    unmatchedItemNames,
+    calculatedTotal,
+    finalTotal: draft.totalFcfa ?? calculatedTotal,
+  });
 
   return {
     ready: issues.length === 0,
@@ -203,6 +232,16 @@ async function sendSummaryOrClarification(staffPhone: string, sessionId: string,
   const supabase = createServiceClient();
   const resolved = await resolveDraft(draft);
 
+  // Une fois le client résolu (téléphone explicite OU correspondance par
+  // nom), on FIXE ce téléphone dans le draft persisté. Sans ça, chaque tour
+  // relançait un matching flou par nom depuis zéro, qui pouvait retomber sur
+  // un PROFIL DIFFÉRENT (bug réel : même conversation, même client "Abiola",
+  // numéro différent entre deux tours) — une fois épinglé, il ne peut plus dériver.
+  if (resolved.clientPhone && draft.clientTel !== resolved.clientPhone) {
+    console.log("[staff-log] client résolu — épinglage du téléphone dans le draft", { sessionId, staffPhone, before: draft.clientTel, after: resolved.clientPhone });
+    draft = { ...draft, clientTel: resolved.clientPhone };
+  }
+
   if (!resolved.ready) {
     await supabase.from("staff_log_sessions").update({ draft, awaiting_final_confirmation: false }).eq("id", sessionId);
     await sendToStaff(staffPhone, resolved.clarification!);
@@ -231,6 +270,7 @@ async function sendSummaryOrClarification(staffPhone: string, sessionId: string,
 /** Démarre une nouvelle session /commande-log à partir du premier message (texte libre ou audio transcrit). */
 export async function startLogSession(staffPhone: string, initialText: string): Promise<void> {
   const supabase = createServiceClient();
+  console.log("[staff-log] startLogSession", { staffPhone, initialText });
 
   const updated = await updateStaffLogDraft(emptyStaffLogDraft(), initialText);
   if (!updated) {
@@ -259,10 +299,27 @@ export async function startLogSession(staffPhone: string, initialText: string): 
   await sendSummaryOrClarification(staffPhone, session.id, updated);
 }
 
-/** Poursuit une session /commande-log active : soit une confirmation finale ("oui"), soit une correction/précision en langage libre. */
+/** Poursuit une session /commande-log active : soit une confirmation finale ("oui"), soit une correction/précision en langage libre, soit une question business qui interrompt temporairement sans toucher la session. */
 export async function continueLogSession(staffPhone: string, session: StaffLogSessionRow, replyText: string): Promise<void> {
+  console.log("[staff-log] continueLogSession", { staffPhone, sessionId: session.id, awaitingFinalConfirmation: session.awaiting_final_confirmation, replyText });
+
   if (session.awaiting_final_confirmation && isConfirmationReply(replyText)) {
     await finalizeLogSession(staffPhone, session);
+    return;
+  }
+
+  // Une question business ("fais-moi le point du mois") peut arriver EN
+  // PLEIN MILIEU d'une session /commande-log active (staff qui vérifie un
+  // chiffre avant de continuer) — le check global dans staff-order.ts ne
+  // voit JAMAIS ce cas puisqu'une session active court-circuite tout avant
+  // d'atteindre ce check. Sans ce garde-fou ICI, le message était absorbé à
+  // tort comme une correction de la commande en cours (updateStaffLogDraft
+  // le traitait comme du texte à intégrer au draft, produisant un nouveau
+  // résumé au lieu d'une réponse à la question). La session active n'est PAS
+  // touchée : le staff peut reprendre sa commande juste après.
+  if (isBusinessQuestion(replyText)) {
+    console.log("[staff-log] message classifié comme question business pendant une session active — session laissée intacte", { staffPhone, sessionId: session.id, replyText });
+    await handleStaffQuestion(staffPhone, replyText);
     return;
   }
 
@@ -279,6 +336,7 @@ export async function continueLogSession(staffPhone: string, session: StaffLogSe
 /** Enregistre définitivement la commande — statut "livree" direct, aucun message au client ni au livreur, seule la confirmation finale part au staff. */
 async function finalizeLogSession(staffPhone: string, session: StaffLogSessionRow): Promise<void> {
   const supabase = createServiceClient();
+  console.log("[staff-log] finalizeLogSession", { staffPhone, sessionId: session.id, draft: session.draft });
   const resolved = await resolveDraft(session.draft);
 
   if (!resolved.ready) {

@@ -1,4 +1,4 @@
-import { generateStructuredJson } from "@/lib/ai-provider";
+import { generateStructuredJson, getAiModel } from "@/lib/ai-provider";
 
 export interface StaffLogDraftItem {
   nom: string;
@@ -54,8 +54,12 @@ Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
   "livreur_tel": string ou null (chiffres uniquement)
 }`;
 
+  const model = await getAiModel().catch(() => "inconnu");
   try {
     const raw = await generateStructuredJson(prompt);
+    // Résultat brut demandé explicitement pour diagnostiquer les écarts
+    // d'extraction (prix non isolé, champ halluciné...) sans deviner.
+    console.log("[staff-log-ai] updateStaffLogDraft — réponse brute", { model, previousDraft, newMessage, raw });
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as {
@@ -68,7 +72,7 @@ Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
       livreur_tel?: string | null;
     };
 
-    return {
+    const result: StaffLogDraft = {
       clientNom: parsed.client_nom?.trim() || null,
       clientTel: parsed.client_tel?.replace(/[^\d]/g, "") || null,
       plats: (parsed.plats ?? [])
@@ -83,8 +87,10 @@ Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
       livreurNom: parsed.livreur_nom?.trim() || null,
       livreurTel: parsed.livreur_tel?.replace(/[^\d]/g, "") || null,
     };
+    console.log("[staff-log-ai] updateStaffLogDraft — draft résultant", { model, result });
+    return result;
   } catch (err) {
-    console.error("[staff-log-ai] updateStaffLogDraft FAILED", err);
+    console.error("[staff-log-ai] updateStaffLogDraft FAILED", { model, errorMessage: err instanceof Error ? err.message : String(err), error: err });
     return null;
   }
 }
