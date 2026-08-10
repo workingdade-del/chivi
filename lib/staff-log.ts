@@ -54,6 +54,8 @@ export async function getActiveLogSession(staffPhone: string): Promise<StaffLogS
 interface ResolvedItem {
   productId: string;
   productName: string;
+  variantId: string | null;
+  variantName: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -83,12 +85,41 @@ async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
   const supabase = createServiceClient();
 
   const { data: products } = await supabase.from("products").select("id, name, base_price").eq("is_available", true);
+  const { data: variantRows } = await supabase.from("product_variants").select("id, product_id, name, price").eq("is_available", true);
   const matchedItems: ResolvedItem[] = [];
   const unmatchedItemNames: string[] = [];
   for (const plat of draft.plats) {
     const match = findBestMatch(plat.nom, products ?? [], (p) => p.name);
     if (match) {
-      matchedItems.push({ productId: match.item.id, productName: match.item.name, quantity: plat.quantite, unitPrice: match.item.base_price, lineTotal: match.item.base_price * plat.quantite });
+      let unitPrice = match.item.base_price;
+      let variantId: string | null = null;
+      let variantName: string | null = null;
+      if (plat.prixUnitaire != null) {
+        // Le staff a précisé un prix pour CE plat — s'il correspond
+        // exactement à une variante connue du menu, on sélectionne CETTE
+        // variante (pas le prix de base) ; sinon on respecte quand même le
+        // prix annoncé plutôt que d'afficher le prix de base en silence —
+        // c'est exactement l'incohérence du bug CHV-2086/2088 ("1x Atassi
+        // CHIVI à 1000 FCFA" alors que le staff avait dit 1200).
+        const productVariants = (variantRows ?? []).filter((v) => v.product_id === match.item.id);
+        const variantMatch = productVariants.find((v) => v.price === plat.prixUnitaire);
+        if (variantMatch) {
+          unitPrice = variantMatch.price;
+          variantId = variantMatch.id;
+          variantName = variantMatch.name;
+        } else {
+          unitPrice = plat.prixUnitaire;
+        }
+      }
+      matchedItems.push({
+        productId: match.item.id,
+        productName: match.item.name,
+        variantId,
+        variantName,
+        quantity: plat.quantite,
+        unitPrice,
+        lineTotal: unitPrice * plat.quantite,
+      });
     } else {
       unmatchedItemNames.push(plat.nom);
     }
@@ -184,6 +215,7 @@ async function sendSummaryOrClarification(staffPhone: string, sessionId: string,
     isExistingClient: resolved.isExistingClient,
     items: resolved.matchedItems.map((i) => ({
       productName: i.productName,
+      variantName: i.variantName,
       quantity: i.quantity,
       unitPrice: i.unitPrice,
       lineTotal: i.lineTotal,
@@ -202,7 +234,10 @@ export async function startLogSession(staffPhone: string, initialText: string): 
 
   const updated = await updateStaffLogDraft(emptyStaffLogDraft(), initialText);
   if (!updated) {
-    console.error("[staff-log] extraction Groq indisponible pour démarrer la session", { staffPhone });
+    console.error("[staff-log] échec d'extraction IA pour démarrer la session", { staffPhone });
+    // Ne jamais laisser le staff sans réponse — un échec silencieux ici
+    // était indiscernable d'un message perdu (aucune trace côté staff).
+    await sendToStaff(staffPhone, "Désolé, je n'ai pas pu comprendre ce message. Réessaie en précisant le client et les plats commandés.");
     return;
   }
 
@@ -233,7 +268,8 @@ export async function continueLogSession(staffPhone: string, session: StaffLogSe
 
   const updated = await updateStaffLogDraft(session.draft, replyText);
   if (!updated) {
-    console.error("[staff-log] extraction Groq indisponible pour la correction", { staffPhone });
+    console.error("[staff-log] échec d'extraction IA pour la correction", { staffPhone });
+    await sendToStaff(staffPhone, "Désolé, je n'ai pas pu comprendre ce message. Réessaie en reformulant la correction.");
     return;
   }
 
@@ -287,7 +323,9 @@ async function finalizeLogSession(staffPhone: string, session: StaffLogSessionRo
     await supabase.from("order_items").insert({
       order_id: order.id,
       product_id: item.productId,
+      product_variant_id: item.variantId,
       product_name: item.productName,
+      variant_name: item.variantName,
       unit_price: item.unitPrice,
       quantity: item.quantity,
       line_total: item.lineTotal,

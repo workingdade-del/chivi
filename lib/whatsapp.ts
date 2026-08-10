@@ -701,7 +701,7 @@ export function buildStaffLogSummaryMessage(params: {
   clientName: string;
   clientPhone: string | null;
   isExistingClient: boolean;
-  items: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
+  items: { productName: string; variantName: string | null; quantity: number; unitPrice: number; lineTotal: number }[];
   total: number;
   location: string | null;
   driverName: string | null;
@@ -711,11 +711,21 @@ export function buildStaffLogSummaryMessage(params: {
     : `Client : ${params.clientName}`;
 
   const itemLines = params.items.map(
-    (i) => `${i.quantity}x ${i.productName} à ${i.unitPrice.toLocaleString("fr-FR")} FCFA = ${i.lineTotal.toLocaleString("fr-FR")} FCFA`
+    (i) =>
+      `${i.quantity}x ${i.productName}${i.variantName ? ` (${i.variantName})` : ""} à ${i.unitPrice.toLocaleString("fr-FR")} FCFA = ${i.lineTotal.toLocaleString("fr-FR")} FCFA`
   );
   const warnings = params.items
     .filter((i) => i.quantity > STAFF_LOG_HIGH_QUANTITY_THRESHOLD)
     .map((i) => `⚠️ Quantité élevée (${i.quantity}x) pour "${i.productName}", vérifiez SVP`);
+
+  // Le total annoncé peut légitimement différer de la somme des lignes (remise,
+  // arrangement réel) — mais ça doit être VISIBLE plutôt que silencieux, sinon
+  // c'est exactement l'incohérence du bug CHV-2086/2088 (prix unitaire affiché
+  // différent du total, sans aucun signal).
+  const itemsSum = params.items.reduce((s, i) => s + i.lineTotal, 0);
+  if (itemsSum !== params.total) {
+    warnings.push(`ℹ️ Le total indiqué (${params.total.toLocaleString("fr-FR")} FCFA) diffère de la somme des lignes (${itemsSum.toLocaleString("fr-FR")} FCFA) — vérifiez SVP`);
+  }
 
   const lines = ["📋 J'ai compris :", clientLine, "Commande :", ...itemLines, ...warnings, `Total : ${params.total.toLocaleString("fr-FR")} FCFA`];
   if (params.location) lines.push(`Localisation : ${params.location}`);

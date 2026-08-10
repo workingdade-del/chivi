@@ -302,18 +302,27 @@ async function answerWithClaude(question: string): Promise<string> {
     messages,
   });
 
-  const toolUse = first.content.find((block) => block.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
+  const toolUses = first.content.filter((block): block is Anthropic.ToolUseBlock => block.type === "tool_use");
+  if (toolUses.length === 0) {
     const text = first.content.find((block) => block.type === "text");
     return text && text.type === "text" ? text.text.trim() : "Je n'ai pas pu répondre à cette question.";
   }
 
-  const result = await executeTool(toolUse.name, toolUse.input as Record<string, unknown>);
+  // Une question large ("fais-moi le point de la semaine") peut pousser
+  // Claude à demander PLUSIEURS outils dans le même tour (revenus + plat
+  // vedette...) — l'API exige un tool_result pour CHAQUE tool_use du tour
+  // précédent dans le message suivant, sinon elle rejette l'appel entier
+  // avec une erreur 400 (silencieusement transformée en message générique
+  // côté staff). Ne traiter que le premier tool_use cassait ces questions.
+  const toolResults = await Promise.all(
+    toolUses.map(async (toolUse) => ({
+      type: "tool_result" as const,
+      tool_use_id: toolUse.id,
+      content: JSON.stringify(await executeTool(toolUse.name, toolUse.input as Record<string, unknown>)),
+    }))
+  );
   messages.push({ role: "assistant", content: first.content });
-  messages.push({
-    role: "user",
-    content: [{ type: "tool_result", tool_use_id: toolUse.id, content: JSON.stringify(result) }],
-  });
+  messages.push({ role: "user", content: toolResults });
 
   const second = await anthropic.messages.create({
     model: CLAUDE_MODEL,

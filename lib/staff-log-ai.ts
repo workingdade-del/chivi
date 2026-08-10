@@ -3,6 +3,8 @@ import { generateStructuredJson } from "@/lib/ai-provider";
 export interface StaffLogDraftItem {
   nom: string;
   quantite: number;
+  /** Prix unitaire de CE plat si le staff l'a précisé (correspond en général à une variante précise du menu — taille, format...) — distinct de totalFcfa, qui est un montant global pour toute la commande. */
+  prixUnitaire: number | null;
 }
 
 export interface StaffLogDraft {
@@ -37,12 +39,16 @@ ${JSON.stringify(previousDraft)}
 Le staff vient d'écrire (ou de dire, transcrit depuis un message vocal) :
 """${newMessage}"""
 
-Ce message est soit une description initiale, soit une correction/précision sur ta compréhension actuelle (ex: "non c'est 2000f pas 1500f", "ajoute un jus bissap", "le client c'est Marie", "son numéro c'est 0161234567"). Mets à jour ta compréhension : garde identique tout ce qui n'est ni contredit ni complété par ce nouveau message, applique uniquement les changements/ajouts demandés. Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
+Ce message est soit une description initiale, soit une correction/précision sur ta compréhension actuelle (ex: "non c'est 2000f pas 1500f", "ajoute un jus bissap", "le client c'est Marie", "son numéro c'est 0161234567"). Mets à jour ta compréhension : garde identique tout ce qui n'est ni contredit ni complété par ce nouveau message, applique uniquement les changements/ajouts demandés.
+
+IMPORTANT sur les prix : si un prix est mentionné juste après ou avec un plat précis (ex: "Atassi version 1200", "Frites grand format 1500f", "2 Poulet braisé à 2000 chacun"), ce prix est le PRIX UNITAIRE DE CE PLAT (il correspond en général à une variante précise du menu — taille, format...) → mets-le dans "prix_unitaire" pour ce plat, JAMAIS dans "total_fcfa". Ne remplis "total_fcfa" que si un montant global DISTINCT est donné pour toute la commande (ex: "total 3500f", "ça fait 5000 en tout") — le plus souvent absent, laisse-le alors à null (le total sera calculé automatiquement à partir des prix des plats).
+
+Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
 {
   "client_nom": string ou null,
   "client_tel": string ou null (chiffres uniquement, retire espaces/tirets/plus),
-  "plats": [{"nom": string, "quantite": number}],
-  "total_fcfa": number ou null (le prix total en FCFA si mentionné),
+  "plats": [{"nom": string, "quantite": number, "prix_unitaire": number ou null}],
+  "total_fcfa": number ou null (UNIQUEMENT un montant global pour toute la commande, distinct des prix par plat),
   "localisation": string ou null,
   "livreur_nom": string ou null,
   "livreur_tel": string ou null (chiffres uniquement)
@@ -55,7 +61,7 @@ Ce message est soit une description initiale, soit une correction/précision sur
     const parsed = JSON.parse(raw) as {
       client_nom?: string | null;
       client_tel?: string | null;
-      plats?: { nom?: string; quantite?: number }[];
+      plats?: { nom?: string; quantite?: number; prix_unitaire?: number | null }[];
       total_fcfa?: number | null;
       localisation?: string | null;
       livreur_nom?: string | null;
@@ -66,7 +72,11 @@ Ce message est soit une description initiale, soit une correction/précision sur
       clientNom: parsed.client_nom?.trim() || null,
       clientTel: parsed.client_tel?.replace(/[^\d]/g, "") || null,
       plats: (parsed.plats ?? [])
-        .map((p) => ({ nom: p.nom?.trim() ?? "", quantite: p.quantite && p.quantite > 0 ? Math.round(p.quantite) : 1 }))
+        .map((p) => ({
+          nom: p.nom?.trim() ?? "",
+          quantite: p.quantite && p.quantite > 0 ? Math.round(p.quantite) : 1,
+          prixUnitaire: typeof p.prix_unitaire === "number" && p.prix_unitaire > 0 ? Math.round(p.prix_unitaire) : null,
+        }))
         .filter((p) => p.nom.length > 0),
       totalFcfa: typeof parsed.total_fcfa === "number" && parsed.total_fcfa > 0 ? Math.round(parsed.total_fcfa) : null,
       localisation: parsed.localisation?.trim() || null,

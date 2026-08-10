@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendWhatsappText, extractMessageId } from "@/lib/whatsapp";
-import { answerBusinessQuestion } from "@/lib/ai-provider";
+import { answerBusinessQuestion, getAiModel } from "@/lib/ai-provider";
 
 /**
  * Heuristique rapide (pas d'appel IA) pour distinguer une QUESTION business
@@ -25,6 +25,13 @@ const QUESTION_WORDS = [
   "comment se porte",
 ];
 
+// Formulations impératives/demandes de résumé qui ne sont pas des questions
+// grammaticales mais appellent quand même une réponse chiffrée (ex:
+// "Fais-moi le point de la semaine" — sans ces patterns, un message pareil
+// n'était détecté ni comme question ni comme commande reconnaissable, et
+// tombait dans le fallback /commande-log sans jamais produire de réponse).
+const REPORT_PHRASES = ["le point", "bilan", "recap", "resume", "rapport", "topo", "situation", "ou en est", "on en est"];
+
 export function isBusinessQuestion(text: string): boolean {
   const normalized = text
     .normalize("NFD")
@@ -32,7 +39,8 @@ export function isBusinessQuestion(text: string): boolean {
     .toLowerCase()
     .trim();
   if (normalized.endsWith("?")) return true;
-  return QUESTION_WORDS.some((w) => normalized.startsWith(w) || normalized.includes(` ${w} `));
+  if (QUESTION_WORDS.some((w) => normalized.startsWith(w) || normalized.includes(` ${w} `))) return true;
+  return REPORT_PHRASES.some((w) => normalized.includes(w));
 }
 
 /** Répond à une question business posée par le staff — l'IA passe toujours par une vraie requête DB (voir lib/ai-provider.ts::answerBusinessQuestion), jamais d'estimation. */
@@ -42,7 +50,19 @@ export async function handleStaffQuestion(staffPhone: string, question: string):
   try {
     answer = await answerBusinessQuestion(question);
   } catch (err) {
-    console.error("[staff-query] échec de réponse à la question business", { staffPhone, question, error: err });
+    // Message générique envoyé au staff volontairement vague — mais l'erreur
+    // RÉELLE (clé API manquante/invalide, timeout, erreur de parsing...) doit
+    // être visible dans les logs serveur pour diagnostiquer, avec le modèle
+    // actif au moment de l'appel (Groq ou Claude — jamais OpenAI, non utilisé
+    // dans ce projet).
+    const model = await getAiModel().catch(() => "inconnu");
+    console.error("[staff-query] échec de réponse à la question business", {
+      staffPhone,
+      question,
+      model,
+      errorMessage: err instanceof Error ? err.message : String(err),
+      error: err,
+    });
     answer = "Désolé, je n'ai pas pu calculer cette réponse pour le moment.";
   }
 
