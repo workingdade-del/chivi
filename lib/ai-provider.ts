@@ -64,10 +64,13 @@ async function generateClaudeReply(systemPrompt: string, history: ChatTurn[]): P
   }
 
   const anthropic = new Anthropic({ apiKey });
+  // `temperature` n'est plus accepté par ce modèle (erreur API confirmée en
+  // production : "`temperature` is deprecated for this model") — retiré ici
+  // et sur tous les autres appels Anthropic de ce fichier plutôt que de
+  // deviner un paramètre de remplacement ; comportement par défaut du modèle.
   const message = await anthropic.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 400,
-    temperature: 0.6,
     system: systemPrompt,
     messages: history.map((turn) => ({ role: turn.role, content: turn.content })),
   });
@@ -122,7 +125,6 @@ async function generateClaudeJson(prompt: string): Promise<string | null> {
     const message = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 600,
-      temperature: 0.1,
       messages: [
         { role: "user", content: `${prompt}\n\nRéponds UNIQUEMENT avec l'objet JSON demandé, sans texte autour.` },
         { role: "assistant", content: "{" },
@@ -328,7 +330,6 @@ async function answerWithClaude(question: string): Promise<string> {
     first = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 400,
-      temperature: 0.2,
       system: BUSINESS_QUESTION_SYSTEM_PROMPT,
       tools: CLAUDE_TOOLS,
       messages,
@@ -364,7 +365,6 @@ async function answerWithClaude(question: string): Promise<string> {
     const second = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 400,
-      temperature: 0.2,
       system: BUSINESS_QUESTION_SYSTEM_PROMPT,
       tools: CLAUDE_TOOLS,
       messages,
