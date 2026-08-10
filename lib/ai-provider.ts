@@ -32,6 +32,31 @@ export async function getAiModel(): Promise<"groq" | "claude"> {
 
 const CLAUDE_MODEL = "claude-sonnet-5";
 
+/**
+ * generateClaudeJson/answerWithClaude n'avaient pas de try/catch local —
+ * une erreur API se propageait jusqu'à l'appelant (staff-log-ai.ts,
+ * staff-query.ts) qui ne loggue que `err.message`, un texte parfois trop
+ * générique ("400 {...}" tronqué) pour diagnostiquer sans deviner. Ici on
+ * capture les champs structurés que l'API Anthropic renvoie explicitement
+ * (status HTTP, type d'erreur, corps JSON complet) AVANT de relancer
+ * l'erreur telle quelle, pour que le comportement (fallback, message
+ * staff) reste identique mais que le log contienne la raison exacte.
+ */
+function logClaudeError(context: string, err: unknown, extra: Record<string, unknown>): void {
+  if (err instanceof Anthropic.APIError) {
+    console.error(`[ai-provider] ${context} — erreur API Anthropic`, {
+      ...extra,
+      status: err.status,
+      type: err.type,
+      requestID: err.requestID,
+      body: err.error,
+      message: err.message,
+    });
+  } else {
+    console.error(`[ai-provider] ${context} — erreur non-API`, { ...extra, errorMessage: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 async function generateClaudeReply(systemPrompt: string, history: ChatTurn[]): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -93,18 +118,23 @@ async function generateClaudeJson(prompt: string): Promise<string | null> {
     return null;
   }
   const anthropic = new Anthropic({ apiKey });
-  const message = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 600,
-    temperature: 0.1,
-    messages: [
-      { role: "user", content: `${prompt}\n\nRéponds UNIQUEMENT avec l'objet JSON demandé, sans texte autour.` },
-      { role: "assistant", content: "{" },
-    ],
-  });
-  const text = message.content.find((block) => block.type === "text");
-  if (!text || text.type !== "text") return null;
-  return "{" + text.text.trim();
+  try {
+    const message = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 600,
+      temperature: 0.1,
+      messages: [
+        { role: "user", content: `${prompt}\n\nRéponds UNIQUEMENT avec l'objet JSON demandé, sans texte autour.` },
+        { role: "assistant", content: "{" },
+      ],
+    });
+    const text = message.content.find((block) => block.type === "text");
+    if (!text || text.type !== "text") return null;
+    return "{" + text.text.trim();
+  } catch (err) {
+    logClaudeError("generateClaudeJson", err, { promptPreview: prompt.slice(0, 200) });
+    throw err;
+  }
 }
 
 /**
@@ -293,14 +323,20 @@ async function answerWithClaude(question: string): Promise<string> {
 
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: question }];
 
-  const first = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 400,
-    temperature: 0.2,
-    system: BUSINESS_QUESTION_SYSTEM_PROMPT,
-    tools: CLAUDE_TOOLS,
-    messages,
-  });
+  let first: Anthropic.Message;
+  try {
+    first = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 400,
+      temperature: 0.2,
+      system: BUSINESS_QUESTION_SYSTEM_PROMPT,
+      tools: CLAUDE_TOOLS,
+      messages,
+    });
+  } catch (err) {
+    logClaudeError("answerWithClaude — premier appel (avant tool use)", err, { question });
+    throw err;
+  }
 
   const toolUses = first.content.filter((block): block is Anthropic.ToolUseBlock => block.type === "tool_use");
   if (toolUses.length === 0) {
@@ -324,17 +360,21 @@ async function answerWithClaude(question: string): Promise<string> {
   messages.push({ role: "assistant", content: first.content });
   messages.push({ role: "user", content: toolResults });
 
-  const second = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 400,
-    temperature: 0.2,
-    system: BUSINESS_QUESTION_SYSTEM_PROMPT,
-    tools: CLAUDE_TOOLS,
-    messages,
-  });
-
-  const text = second.content.find((block) => block.type === "text");
-  return text && text.type === "text" ? text.text.trim() : "Je n'ai pas pu répondre à cette question.";
+  try {
+    const second = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 400,
+      temperature: 0.2,
+      system: BUSINESS_QUESTION_SYSTEM_PROMPT,
+      tools: CLAUDE_TOOLS,
+      messages,
+    });
+    const text = second.content.find((block) => block.type === "text");
+    return text && text.type === "text" ? text.text.trim() : "Je n'ai pas pu répondre à cette question.";
+  } catch (err) {
+    logClaudeError("answerWithClaude — second appel (après tool use)", err, { question, toolNames: toolUses.map((t) => t.name) });
+    throw err;
+  }
 }
 
 /**
