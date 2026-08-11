@@ -21,6 +21,34 @@ export function emptyStaffLogDraft(): StaffLogDraft {
   return { clientNom: null, clientTel: null, plats: [], totalFcfa: null, localisation: null, livreurNom: null, livreurTel: null };
 }
 
+/** JSON Schema du brouillon — utilisé côté Claude (structured outputs, output_config.format) pour contraindre la sortie sans dépendre du "prefill" (rejeté par Claude Sonnet 5 et toute la famille 4.6+). */
+const STAFF_LOG_DRAFT_SCHEMA = {
+  type: "object",
+  properties: {
+    client_nom: { anyOf: [{ type: "string" }, { type: "null" }] },
+    client_tel: { anyOf: [{ type: "string" }, { type: "null" }] },
+    plats: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          nom: { type: "string" },
+          quantite: { type: "number" },
+          prix_unitaire: { anyOf: [{ type: "number" }, { type: "null" }] },
+        },
+        required: ["nom", "quantite", "prix_unitaire"],
+        additionalProperties: false,
+      },
+    },
+    total_fcfa: { anyOf: [{ type: "number" }, { type: "null" }] },
+    localisation: { anyOf: [{ type: "string" }, { type: "null" }] },
+    livreur_nom: { anyOf: [{ type: "string" }, { type: "null" }] },
+    livreur_tel: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  required: ["client_nom", "client_tel", "plats", "total_fcfa", "localisation", "livreur_nom", "livreur_tel"],
+  additionalProperties: false,
+};
+
 /**
  * Met à jour la compréhension d'une commande (déjà servie/livrée) décrite en
  * langage libre par le staff, à partir du brouillon actuel + un nouveau
@@ -56,7 +84,7 @@ Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
 
   const model = await getAiModel().catch(() => "inconnu");
   try {
-    const raw = await generateStructuredJson(prompt);
+    const raw = await generateStructuredJson(prompt, STAFF_LOG_DRAFT_SCHEMA);
     // Résultat brut demandé explicitement pour diagnostiquer les écarts
     // d'extraction (prix non isolé, champ halluciné...) sans deviner.
     console.log("[staff-log-ai] updateStaffLogDraft — réponse brute", { model, previousDraft, newMessage, raw });

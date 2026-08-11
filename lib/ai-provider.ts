@@ -108,13 +108,16 @@ async function generateGroqJson(prompt: string): Promise<string | null> {
 }
 
 /**
- * Claude n'a pas d'équivalent direct au response_format:"json_object" de
- * Groq/OpenAI — on force un JSON propre via la technique standard du
- * "prefill" (démarrer le tour assistant par "{"). Claude ne réécrit pas ce
- * préfixe dans sa réponse, donc on le rajoute nous-mêmes avant de renvoyer
- * le texte complet à parser.
+ * Extraction JSON forcée côté Claude via structured outputs
+ * (output_config.format) — PAS la technique de "prefill" (démarrer le tour
+ * assistant par "{") utilisée avant : Claude Sonnet 5 (et toute la famille
+ * 4.6+) rejette un tour assistant en fin de conversation avec une erreur 400
+ * ("prefill" non supporté), ce qui cassait systématiquement cette extraction
+ * même après le fix du paramètre temperature — deux bugs distincts sur le
+ * même appel. output_config.format est la méthode officiellement supportée
+ * pour contraindre la sortie JSON sur ce modèle.
  */
-async function generateClaudeJson(prompt: string): Promise<string | null> {
+async function generateClaudeJson(prompt: string, schema: Record<string, unknown>): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.warn("[ai-provider] ANTHROPIC_API_KEY absente — extraction JSON ignorée");
@@ -125,14 +128,12 @@ async function generateClaudeJson(prompt: string): Promise<string | null> {
     const message = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 600,
-      messages: [
-        { role: "user", content: `${prompt}\n\nRéponds UNIQUEMENT avec l'objet JSON demandé, sans texte autour.` },
-        { role: "assistant", content: "{" },
-      ],
+      output_config: { format: { type: "json_schema", schema } },
+      messages: [{ role: "user", content: prompt }],
     });
     const text = message.content.find((block) => block.type === "text");
     if (!text || text.type !== "text") return null;
-    return "{" + text.text.trim();
+    return text.text.trim();
   } catch (err) {
     logClaudeError("generateClaudeJson", err, { promptPreview: prompt.slice(0, 200) });
     throw err;
@@ -142,11 +143,13 @@ async function generateClaudeJson(prompt: string): Promise<string | null> {
 /**
  * Point d'entrée unique pour l'extraction structurée (JSON) — utilisé par
  * lib/staff-log-ai.ts. Dispatché vers Groq ou Claude selon
- * system_settings.ai_model, comme generateAiReply.
+ * system_settings.ai_model, comme generateAiReply. `schema` n'est utilisé que
+ * côté Claude (structured outputs) — Groq force déjà un JSON valide via
+ * response_format:"json_object" sans avoir besoin du schéma exact.
  */
-export async function generateStructuredJson(prompt: string): Promise<string | null> {
+export async function generateStructuredJson(prompt: string, schema: Record<string, unknown>): Promise<string | null> {
   const model = await getAiModel();
-  return model === "claude" ? generateClaudeJson(prompt) : generateGroqJson(prompt);
+  return model === "claude" ? generateClaudeJson(prompt, schema) : generateGroqJson(prompt);
 }
 
 // ============================================================
