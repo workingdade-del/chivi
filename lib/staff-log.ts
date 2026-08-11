@@ -3,7 +3,8 @@ import { sendWhatsappText, extractMessageId, normalizePhone, buildStaffLogSummar
 import { updateStaffLogDraft, emptyStaffLogDraft, type StaffLogDraft } from "@/lib/staff-log-ai";
 import { findBestMatch } from "@/lib/fuzzy-match";
 import { findRecentForwardedLocation } from "@/lib/staff-location";
-import { isBusinessQuestion, handleStaffQuestion } from "@/lib/staff-query";
+import { handleStaffQuestion } from "@/lib/staff-query";
+import { classifyStaffIntent } from "@/lib/ai-provider";
 
 /** Au-delà de cette inactivité, une session /commande-log en cours est abandonnée silencieusement (pas de message, contrairement au reste du flow). */
 const STALE_LOG_SESSION_MINUTES = 15;
@@ -23,6 +24,15 @@ interface StaffLogSessionRow {
   id: string;
   draft: StaffLogDraft;
   awaiting_final_confirmation: boolean;
+}
+
+/** Résumé court d'un draft en cours, donné au routeur d'intentions (classifyStaffIntent) pour qu'il distingue "le staff continue cette commande" de "le staff change de sujet". */
+function summarizeDraftForContext(draft: StaffLogDraft): string {
+  const parts: string[] = [];
+  if (draft.clientNom) parts.push(`client : ${draft.clientNom}`);
+  if (draft.plats.length) parts.push(`plats : ${draft.plats.map((p) => `${p.quantite}x ${p.nom}`).join(", ")}`);
+  if (draft.totalFcfa != null) parts.push(`total : ${draft.totalFcfa} FCFA`);
+  return parts.length ? parts.join(" ; ") : "rien de précisé encore";
 }
 
 /** Abandon silencieux (pas de message envoyé) de toute session /commande-log inactive depuis plus de 15 minutes — évite qu'une conversation oubliée bloque indéfiniment le staff. */
@@ -299,7 +309,7 @@ export async function startLogSession(staffPhone: string, initialText: string): 
   await sendSummaryOrClarification(staffPhone, session.id, updated);
 }
 
-/** Poursuit une session /commande-log active : soit une confirmation finale ("oui"), soit une correction/précision en langage libre, soit une question business qui interrompt temporairement sans toucher la session. */
+/** Poursuit une session /commande-log active : soit une confirmation finale ("oui"), soit une correction/précision en langage libre (log_order), soit une question business ou un message social qui interrompt temporairement sans toucher la session — voir classifyStaffIntent. */
 export async function continueLogSession(staffPhone: string, session: StaffLogSessionRow, replyText: string): Promise<void> {
   console.log("[staff-log] continueLogSession", { staffPhone, sessionId: session.id, awaitingFinalConfirmation: session.awaiting_final_confirmation, replyText });
 
@@ -308,18 +318,31 @@ export async function continueLogSession(staffPhone: string, session: StaffLogSe
     return;
   }
 
-  // Une question business ("fais-moi le point du mois") peut arriver EN
-  // PLEIN MILIEU d'une session /commande-log active (staff qui vérifie un
-  // chiffre avant de continuer) — le check global dans staff-order.ts ne
-  // voit JAMAIS ce cas puisqu'une session active court-circuite tout avant
+  // Une question business ("fais-moi le point du mois") ou un message social
+  // ("super", "merci") peut arriver EN PLEIN MILIEU d'une session
+  // /commande-log active — le check global dans staff-order.ts ne voit
+  // JAMAIS ce cas puisqu'une session active court-circuite tout avant
   // d'atteindre ce check. Sans ce garde-fou ICI, le message était absorbé à
   // tort comme une correction de la commande en cours (updateStaffLogDraft
   // le traitait comme du texte à intégrer au draft, produisant un nouveau
-  // résumé au lieu d'une réponse à la question). La session active n'est PAS
-  // touchée : le staff peut reprendre sa commande juste après.
-  if (isBusinessQuestion(replyText)) {
-    console.log("[staff-log] message classifié comme question business pendant une session active — session laissée intacte", { staffPhone, sessionId: session.id, replyText });
+  // résumé, ou pire, dupliquant/corrompant le draft). La session active
+  // n'est PAS touchée dans les deux cas : le staff peut reprendre sa
+  // commande juste après. classifyStaffIntent reçoit un résumé du draft en
+  // cours pour distinguer "continue cette commande" de "change de sujet".
+  const intent = await classifyStaffIntent(replyText, summarizeDraftForContext(session.draft)).catch((err) => {
+    console.error("[staff-log] classification d'intention échouée pendant une session active — repli sur log_order", { staffPhone, sessionId: session.id, errorMessage: err instanceof Error ? err.message : String(err) });
+    return { tool: "log_order" as const };
+  });
+  console.log("[staff-log] intention classifiée pendant une session active", { staffPhone, sessionId: session.id, intent: intent.tool, replyText });
+
+  if (intent.tool === "query_business_stats") {
+    console.log("[staff-log] question business détectée pendant une session active — session laissée intacte", { staffPhone, sessionId: session.id });
     await handleStaffQuestion(staffPhone, replyText);
+    return;
+  }
+  if (intent.tool === "small_talk") {
+    console.log("[staff-log] message social détecté pendant une session active — session laissée intacte", { staffPhone, sessionId: session.id });
+    await sendToStaff(staffPhone, intent.reply);
     return;
   }
 

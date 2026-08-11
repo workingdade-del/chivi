@@ -19,7 +19,8 @@ import { findBestMatch } from "@/lib/fuzzy-match";
 import { searchPlace } from "@/lib/nominatim";
 import { haversineKm, computeDeliveryFee, KITCHEN_ORIGIN } from "@/lib/distance";
 import { expireStaleLogSession, getActiveLogSession, startLogSession, continueLogSession } from "@/lib/staff-log";
-import { isBusinessQuestion, handleStaffQuestion } from "@/lib/staff-query";
+import { handleStaffQuestion } from "@/lib/staff-query";
+import { classifyStaffIntent } from "@/lib/ai-provider";
 import { LOCATION_WINDOW_MINUTES, findRecentForwardedLocation } from "@/lib/staff-location";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
@@ -117,32 +118,41 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
     return;
   }
 
-  // Question business ("quel est le total du jour ?") plutôt qu'une
-  // commande à enregistrer — sans ce garde-fou, startLogSession
-  // l'absorberait à tort et démarrerait une session d'enregistrement.
-  // Vérifié seulement ici (aucune session /commande-log active, pas un
-  // "/commande") pour ne jamais interrompre une conversation déjà en cours.
-  // NOTE : si une session /commande-log EST active, ce check-ci n'est jamais
-  // atteint (le branchement au-dessus a déjà rendu la main) — c'est
-  // continueLogSession() qui refait le même test dans ce cas (voir
-  // lib/staff-log.ts), pour qu'une question business puisse interrompre une
-  // commande en cours sans corrompre son état.
-  if (isBusinessQuestion(inboundText)) {
+  // Routeur d'intentions IA (remplace l'ancienne détection par mots-clés) —
+  // décide entre log_order, query_business_stats, ou small_talk (aucun outil
+  // choisi = réponse sociale directe). Vérifié seulement ici (aucune session
+  // /commande-log active, pas un "/commande") pour ne jamais interrompre une
+  // conversation déjà en cours. NOTE : si une session /commande-log EST
+  // active, ce check-ci n'est jamais atteint (le branchement au-dessus a
+  // déjà rendu la main) — c'est continueLogSession() qui refait la même
+  // classification dans ce cas (voir lib/staff-log.ts), avec le contexte du
+  // draft en cours, pour qu'une question business ou un message social
+  // puisse interrompre une commande en cours sans corrompre son état.
+  const intent = await classifyStaffIntent(inboundText, null).catch((err) => {
+    console.error("[staff-order] classification d'intention échouée — repli sur log_order", { supportPhone, errorMessage: err instanceof Error ? err.message : String(err) });
+    return { tool: "log_order" as const };
+  });
+  console.log("[staff-order] intention classifiée", { supportPhone, intent: intent.tool });
+
+  if (intent.tool === "query_business_stats") {
     console.log("[staff-order] dispatch -> handleStaffQuestion (question business)", { supportPhone });
     await handleStaffQuestion(supportPhone, inboundText);
+    return;
+  }
+  if (intent.tool === "small_talk") {
+    console.log("[staff-order] dispatch -> réponse sociale directe (small_talk)", { supportPhone });
+    await replyToStaff(supportPhone, intent.reply);
     return;
   }
 
   console.log("[staff-order] dispatch -> startLogSession (nouvelle commande)", { supportPhone });
 
-  // Tout le reste (texte libre OU audio transcrit) est traité comme une
-  // tentative de description de commande à enregistrer. Ce numéro n'est
-  // jamais utilisé pour du chat informel — le staff ne le message que pour
-  // interagir avec ce bot — donc contrairement à "/commande" (rigide), pas
-  // besoin d'un mot-clé strict en début de message : un texte libre doit
-  // démarrer la conversation exactement comme un audio le fait déjà (bug
-  // corrigé ici : le texte exigeait un préfixe exact, l'audio non, d'où
-  // l'audio qui "marchait" et le texte qui restait muet).
+  // log_order : traité comme une tentative de description de commande à
+  // enregistrer. Ce numéro n'est jamais utilisé pour du chat informel — le
+  // staff ne le message que pour interagir avec ce bot — donc contrairement
+  // à "/commande" (rigide), pas besoin d'un mot-clé strict en début de
+  // message : un texte libre doit démarrer la conversation exactement comme
+  // un audio le fait déjà.
   await startLogSession(supportPhone, inboundText);
 }
 

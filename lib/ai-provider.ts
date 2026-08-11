@@ -391,3 +391,112 @@ export async function answerBusinessQuestion(question: string): Promise<string> 
   const model = await getAiModel();
   return model === "claude" ? answerWithClaude(question) : answerWithGroq(question);
 }
+
+// ============================================================
+// Routeur d'intentions staff (lib/staff-order.ts, lib/staff-log.ts) —
+// remplace la détection par mots-clés (listes "quel est", "combien", "le
+// point"...), fragile par construction : toute formulation non prévue
+// (nouveau tournure, faute, dialecte) passait entre les mailles. Un seul
+// appel IA par message décide entre les intentions réelles supportées ;
+// "small_talk" n'est PAS un outil — c'est le cas où le modèle ne choisit
+// aucun outil et répond directement en texte libre (accusé social bref),
+// exactement le comportement demandé ("pas un vrai outil, un cas de sortie").
+// ============================================================
+
+export type StaffIntent =
+  | { tool: "log_order" }
+  | { tool: "query_business_stats" }
+  | { tool: "small_talk"; reply: string };
+
+function routerSystemPrompt(draftContext: string | null): string {
+  const base = `Tu es le routeur d'intentions de l'assistant staff de CHIVI (dark kitchen, Cotonou, Bénin), utilisé par l'équipe support via WhatsApp. Pour le message du staff ci-dessous, détermine son intention RÉELLE et appelle l'outil correspondant :
+
+- "log_order" : le staff décrit (ou précise/corrige) une commande déjà servie/livrée à enregistrer pour la comptabilité — plats, client, prix, quantités, localisation, livreur.
+- "query_business_stats" : le staff pose une question chiffrée sur l'activité business — revenus, marge, plat le plus vendu, nombre de livraisons d'un livreur, bilan de la journée/semaine/mois...
+
+Si le message est purement social ou conversationnel (salutation, remerciement, accusé de réception comme "ok", "super", "merci", "d'accord", "nickel") SANS intention d'action détectable, N'APPELLE AUCUN OUTIL — réponds directement par un texte court et naturel en français (une phrase suffit), sans jamais redemander une information de commande.`;
+
+  if (!draftContext) return base;
+
+  return `${base}
+
+CONTEXTE IMPORTANT : une commande est actuellement en cours de clarification avec ce staff (${draftContext}). Si le nouveau message continue clairement cette commande (précision de plat, quantité, prix, nom ou numéro du client, adresse, livreur...), appelle "log_order" comme d'habitude. Si le message signale une intention TOTALEMENT différente (question chiffrée, ou message purement social), traite-la comme telle — la commande en cours de clarification restera intacte et pourra être reprise juste après, ne t'en préoccupe pas.`;
+}
+
+const ROUTER_TOOL_SCHEMAS = [
+  { name: "log_order", description: "Enregistrer ou continuer de préciser une commande déjà servie/livrée (client, plats, prix, quantités, localisation, livreur)." },
+  { name: "query_business_stats", description: "Répondre à une question chiffrée sur l'activité business (revenus, marge, plats vendus, livraisons d'un livreur, bilan...)." },
+] as const;
+
+const GROQ_ROUTER_TOOLS: Groq.Chat.Completions.ChatCompletionTool[] = ROUTER_TOOL_SCHEMAS.map((t) => ({
+  type: "function",
+  function: { name: t.name, description: t.description, parameters: { type: "object", properties: {}, required: [] } },
+}));
+
+const CLAUDE_ROUTER_TOOLS: Anthropic.Tool[] = ROUTER_TOOL_SCHEMAS.map((t) => ({
+  name: t.name,
+  description: t.description,
+  input_schema: { type: "object", properties: {}, required: [] },
+}));
+
+async function classifyIntentWithGroq(message: string, draftContext: string | null): Promise<StaffIntent> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY n'est pas configurée");
+  const groq = new Groq({ apiKey });
+
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    temperature: 0.1,
+    max_tokens: 300,
+    tools: GROQ_ROUTER_TOOLS,
+    messages: [
+      { role: "system", content: routerSystemPrompt(draftContext) },
+      { role: "user", content: message },
+    ],
+  });
+
+  const choice = completion.choices[0];
+  const toolCall = choice?.message?.tool_calls?.[0];
+  if (toolCall?.function.name === "log_order") return { tool: "log_order" };
+  if (toolCall?.function.name === "query_business_stats") return { tool: "query_business_stats" };
+  return { tool: "small_talk", reply: choice?.message?.content?.trim() || "👍" };
+}
+
+async function classifyIntentWithClaude(message: string, draftContext: string | null): Promise<StaffIntent> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY n'est pas configurée");
+  const anthropic = new Anthropic({ apiKey });
+
+  try {
+    const response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 300,
+      system: routerSystemPrompt(draftContext),
+      tools: CLAUDE_ROUTER_TOOLS,
+      messages: [{ role: "user", content: message }],
+    });
+
+    const toolUse = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    if (toolUse?.name === "log_order") return { tool: "log_order" };
+    if (toolUse?.name === "query_business_stats") return { tool: "query_business_stats" };
+
+    const text = response.content.find((b) => b.type === "text");
+    return { tool: "small_talk", reply: text && text.type === "text" ? text.text.trim() : "👍" };
+  } catch (err) {
+    logClaudeError("classifyStaffIntent", err, { message, hasDraftContext: !!draftContext });
+    throw err;
+  }
+}
+
+/**
+ * Point d'entrée unique du routeur d'intentions staff — dispatché vers Groq
+ * ou Claude selon system_settings.ai_model, comme le reste du fichier.
+ * `draftContext` (résumé court d'une commande en cours de clarification, ou
+ * null) donne au modèle le contexte nécessaire pour distinguer "le staff
+ * continue cette commande" de "le staff change complètement de sujet" —
+ * voir lib/staff-log.ts::continueLogSession.
+ */
+export async function classifyStaffIntent(message: string, draftContext: string | null): Promise<StaffIntent> {
+  const model = await getAiModel();
+  return model === "claude" ? classifyIntentWithClaude(message, draftContext) : classifyIntentWithGroq(message, draftContext);
+}
