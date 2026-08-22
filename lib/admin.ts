@@ -10,6 +10,7 @@ export interface OrderDetailData {
   payment_method: PaymentMethod;
   subtotal: number;
   delivery_fee: number;
+  discount_amount: number;
   total: number;
   client_note: string | null;
   created_at: string;
@@ -373,7 +374,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetailData | null
   const { data: order } = await supabase
     .from("orders")
     .select(
-      "id, order_number, status, payment_method, subtotal, delivery_fee, total, client_note, created_at, delivery_address, profiles(full_name, whatsapp_phone), order_items(id, product_id, product_variant_id, product_name, variant_name, unit_price, quantity, line_total, order_supplements(supplement_id, supplement_name, unit_price)), order_assignments(id, drivers(id, name, phone))"
+      "id, order_number, status, payment_method, subtotal, delivery_fee, discount_amount, total, client_note, created_at, delivery_address, profiles(full_name, whatsapp_phone), order_items(id, product_id, product_variant_id, product_name, variant_name, unit_price, quantity, line_total, order_supplements(supplement_id, supplement_name, unit_price)), order_assignments(id, drivers(id, name, phone))"
     )
     .eq("id", id)
     .maybeSingle();

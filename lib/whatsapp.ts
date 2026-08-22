@@ -703,6 +703,7 @@ export function buildStaffLogSummaryMessage(params: {
   isExistingClient: boolean;
   items: { productName: string; variantName: string | null; quantity: number; unitPrice: number; lineTotal: number }[];
   total: number;
+  discountAmount: number;
   location: string | null;
   driverName: string | null;
 }): string {
@@ -718,16 +719,19 @@ export function buildStaffLogSummaryMessage(params: {
     .filter((i) => i.quantity > STAFF_LOG_HIGH_QUANTITY_THRESHOLD)
     .map((i) => `⚠️ Quantité élevée (${i.quantity}x) pour "${i.productName}", vérifiez SVP`);
 
-  // Le total annoncé peut légitimement différer de la somme des lignes (remise,
-  // arrangement réel) — mais ça doit être VISIBLE plutôt que silencieux, sinon
-  // c'est exactement l'incohérence du bug CHV-2086/2088 (prix unitaire affiché
-  // différent du total, sans aucun signal).
+  // Le total annoncé peut légitimement différer de la somme des lignes MOINS
+  // la réduction (arrangement réel) — mais ça doit être VISIBLE plutôt que
+  // silencieux, sinon c'est exactement l'incohérence du bug CHV-2086/2088
+  // (prix unitaire affiché différent du total, sans aucun signal).
   const itemsSum = params.items.reduce((s, i) => s + i.lineTotal, 0);
-  if (itemsSum !== params.total) {
-    warnings.push(`ℹ️ Le total indiqué (${params.total.toLocaleString("fr-FR")} FCFA) diffère de la somme des lignes (${itemsSum.toLocaleString("fr-FR")} FCFA) — vérifiez SVP`);
+  const expectedTotal = Math.max(0, itemsSum - params.discountAmount);
+  if (expectedTotal !== params.total) {
+    warnings.push(`ℹ️ Le total indiqué (${params.total.toLocaleString("fr-FR")} FCFA) diffère de la somme des lignes${params.discountAmount > 0 ? " moins la réduction" : ""} (${expectedTotal.toLocaleString("fr-FR")} FCFA) — vérifiez SVP`);
   }
 
-  const lines = ["📋 J'ai compris :", clientLine, "Commande :", ...itemLines, ...warnings, `Total : ${params.total.toLocaleString("fr-FR")} FCFA`];
+  const lines = ["📋 J'ai compris :", clientLine, "Commande :", ...itemLines, ...warnings];
+  if (params.discountAmount > 0) lines.push(`Réduction : -${params.discountAmount.toLocaleString("fr-FR")} FCFA`);
+  lines.push(`Total : ${params.total.toLocaleString("fr-FR")} FCFA`);
   if (params.location) lines.push(`Localisation : ${params.location}`);
   if (params.driverName) lines.push(`Livreur : ${params.driverName}`);
   lines.push("", "Je confirme et j'enregistre ? Répondez OUI ou précisez ce qui doit être corrigé.");

@@ -19,8 +19,9 @@ import { findBestMatch } from "@/lib/fuzzy-match";
 import { searchPlace } from "@/lib/nominatim";
 import { haversineKm, computeDeliveryFee, KITCHEN_ORIGIN } from "@/lib/distance";
 import { expireStaleLogSession, getActiveLogSession, startLogSession, continueLogSession } from "@/lib/staff-log";
-import { handleStaffQuestion } from "@/lib/staff-query";
 import { classifyStaffIntent } from "@/lib/ai-provider";
+import { handleNonOrderIntent } from "@/lib/staff-intent-dispatch";
+import { getPendingClientAction, handlePendingClientActionReply } from "@/lib/staff-client-actions";
 import { LOCATION_WINDOW_MINUTES, findRecentForwardedLocation } from "@/lib/staff-location";
 import type { PaymentMethod } from "@/lib/supabase/types";
 
@@ -100,6 +101,19 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
     return;
   }
 
+  // Action client en attente de confirmation (renommer/changer numéro) —
+  // vérifiée AVANT la session /commande-log active, car les deux mécanismes
+  // sont indépendants et peuvent coexister (le staff a pu déclencher un
+  // rename_client en pleine clarification de commande). Si la réponse
+  // n'est pas une confirmation, l'action est abandonnée et le message
+  // retombe dans le dispatch normal ci-dessous.
+  const pendingClientAction = await getPendingClientAction(supportPhone);
+  if (pendingClientAction) {
+    console.log("[staff-order] dispatch -> action client en attente", { supportPhone, actionType: pendingClientAction.action_type });
+    const handled = await handlePendingClientActionReply(supportPhone, pendingClientAction, inboundText);
+    if (handled) return;
+  }
+
   // Sessions /commande-log bloquées par inactivité (> 15 min) — abandon
   // silencieux avant tout traitement du nouveau message.
   await expireStaleLogSession(supportPhone);
@@ -119,31 +133,23 @@ export async function handleStaffOrderSubmission(supportPhone: string, message: 
   }
 
   // Routeur d'intentions IA (remplace l'ancienne détection par mots-clés) —
-  // décide entre log_order, query_business_stats, ou small_talk (aucun outil
-  // choisi = réponse sociale directe). Vérifié seulement ici (aucune session
-  // /commande-log active, pas un "/commande") pour ne jamais interrompre une
-  // conversation déjà en cours. NOTE : si une session /commande-log EST
-  // active, ce check-ci n'est jamais atteint (le branchement au-dessus a
-  // déjà rendu la main) — c'est continueLogSession() qui refait la même
-  // classification dans ce cas (voir lib/staff-log.ts), avec le contexte du
-  // draft en cours, pour qu'une question business ou un message social
-  // puisse interrompre une commande en cours sans corrompre son état.
+  // décide entre log_order, query_business_stats, rename_client,
+  // update_client_phone, ou small_talk (aucun outil choisi = réponse
+  // sociale directe). Vérifié seulement ici (aucune session /commande-log
+  // active, pas un "/commande") pour ne jamais interrompre une conversation
+  // déjà en cours. NOTE : si une session /commande-log EST active, ce
+  // check-ci n'est jamais atteint (le branchement au-dessus a déjà rendu la
+  // main) — c'est continueLogSession() qui refait la même classification
+  // dans ce cas (voir lib/staff-log.ts), avec le contexte du draft en
+  // cours, pour qu'une autre intention puisse interrompre une commande en
+  // cours sans corrompre son état.
   const intent = await classifyStaffIntent(inboundText, null).catch((err) => {
     console.error("[staff-order] classification d'intention échouée — repli sur log_order", { supportPhone, errorMessage: err instanceof Error ? err.message : String(err) });
     return { tool: "log_order" as const };
   });
   console.log("[staff-order] intention classifiée", { supportPhone, intent: intent.tool });
 
-  if (intent.tool === "query_business_stats") {
-    console.log("[staff-order] dispatch -> handleStaffQuestion (question business)", { supportPhone });
-    await handleStaffQuestion(supportPhone, inboundText);
-    return;
-  }
-  if (intent.tool === "small_talk") {
-    console.log("[staff-order] dispatch -> réponse sociale directe (small_talk)", { supportPhone });
-    await replyToStaff(supportPhone, intent.reply);
-    return;
-  }
+  if (await handleNonOrderIntent(supportPhone, intent, inboundText)) return;
 
   console.log("[staff-order] dispatch -> startLogSession (nouvelle commande)", { supportPhone });
 

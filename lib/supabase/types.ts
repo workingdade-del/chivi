@@ -120,6 +120,7 @@ export interface Database {
           payment_status: PaymentStatus;
           subtotal: number;
           delivery_fee: number;
+          discount_amount: number;
           total: number;
           delivery_address: string | null;
           delivery_lat: number | null;
@@ -403,10 +404,24 @@ export interface Database {
           status: "awaiting_confirmation" | "completed" | "abandoned";
           draft: unknown;
           awaiting_final_confirmation: boolean;
+          pending_disambiguation: unknown;
           created_at: string;
           updated_at: string;
         },
         "staff_phone" | "draft"
+      >;
+      staff_pending_actions: Table<
+        {
+          id: string;
+          staff_phone: string;
+          action_type: "rename_client" | "update_client_phone";
+          payload: unknown;
+          summary: string;
+          status: "awaiting_confirmation" | "completed" | "abandoned";
+          created_at: string;
+          updated_at: string;
+        },
+        "staff_phone" | "action_type" | "payload" | "summary"
       >;
     };
     Views: {

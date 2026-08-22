@@ -42,6 +42,7 @@ export function NewOrderForm() {
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryFee, setDeliveryFee] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
   const [driverId, setDriverId] = useState("");
   const [notify, setNotify] = useState(false);
 
@@ -67,7 +68,8 @@ export function NewOrderForm() {
       )
     : clients;
 
-  const subtotal = items.reduce((s, i) => s + i.lineTotal, 0);
+  const rawSubtotal = items.reduce((s, i) => s + i.lineTotal, 0);
+  const subtotal = Math.max(0, rawSubtotal - discountAmount);
   const total = subtotal + deliveryFee;
 
   const canSubmit =
@@ -99,6 +101,7 @@ export function NewOrderForm() {
           orderDate,
           deliveryAddress: deliveryAddress.trim() || undefined,
           deliveryFee,
+          discountAmount,
           driverId: driverId || undefined,
           notify,
         }),
@@ -250,13 +253,31 @@ export function NewOrderForm() {
               className="w-full border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2.5 text-sm"
             />
           </div>
+
+          <div>
+            <label className="text-xs font-bold text-[#9a8b78] block mb-1.5">Réduction (FCFA)</label>
+            <input
+              type="number"
+              min={0}
+              value={discountAmount}
+              onChange={(e) => setDiscountAmount(Number(e.target.value))}
+              placeholder="0"
+              className="w-full border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2.5 text-sm"
+            />
+          </div>
         </div>
 
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="flex justify-between text-sm text-[#6d6358] py-0.5">
             <span>Sous-total</span>
-            <span>{formatFcfa(subtotal)}</span>
+            <span>{formatFcfa(rawSubtotal)}</span>
           </div>
+          {discountAmount > 0 && (
+            <div className="flex justify-between text-sm text-chilli py-0.5">
+              <span>Réduction</span>
+              <span>-{formatFcfa(discountAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm text-[#6d6358] py-0.5">
             <span>Livraison</span>
             <span>{formatFcfa(deliveryFee)}</span>

@@ -406,13 +406,17 @@ export async function answerBusinessQuestion(question: string): Promise<string> 
 export type StaffIntent =
   | { tool: "log_order" }
   | { tool: "query_business_stats" }
+  | { tool: "rename_client"; clientIdentifier: string; newName: string }
+  | { tool: "update_client_phone"; clientIdentifier: string; newPhone: string }
   | { tool: "small_talk"; reply: string };
 
 function routerSystemPrompt(draftContext: string | null): string {
   const base = `Tu es le routeur d'intentions de l'assistant staff de CHIVI (dark kitchen, Cotonou, Bénin), utilisé par l'équipe support via WhatsApp. Pour le message du staff ci-dessous, détermine son intention RÉELLE et appelle l'outil correspondant :
 
-- "log_order" : le staff décrit (ou précise/corrige) une commande déjà servie/livrée à enregistrer pour la comptabilité — plats, client, prix, quantités, localisation, livreur.
+- "log_order" : le staff décrit (ou précise/corrige) une commande déjà servie/livrée à enregistrer pour la comptabilité — plats, client, prix, quantités, localisation, livreur, éventuelle réduction.
 - "query_business_stats" : le staff pose une question chiffrée sur l'activité business — revenus, marge, plat le plus vendu, nombre de livraisons d'un livreur, bilan de la journée/semaine/mois...
+- "rename_client" : le staff veut renommer un client existant (précise l'identifiant actuel — nom ou numéro — ET le nouveau nom).
+- "update_client_phone" : le staff veut modifier le numéro de téléphone d'un client existant (précise l'identifiant actuel — nom ou numéro — ET le nouveau numéro).
 
 Si le message est purement social ou conversationnel (salutation, remerciement, accusé de réception comme "ok", "super", "merci", "d'accord", "nickel") SANS intention d'action détectable, N'APPELLE AUCUN OUTIL — réponds directement par un texte court et naturel en français (une phrase suffit), sans jamais redemander une information de commande.`;
 
@@ -420,24 +424,111 @@ Si le message est purement social ou conversationnel (salutation, remerciement, 
 
   return `${base}
 
-CONTEXTE IMPORTANT : une commande est actuellement en cours de clarification avec ce staff (${draftContext}). Si le nouveau message continue clairement cette commande (précision de plat, quantité, prix, nom ou numéro du client, adresse, livreur...), appelle "log_order" comme d'habitude. Si le message signale une intention TOTALEMENT différente (question chiffrée, ou message purement social), traite-la comme telle — la commande en cours de clarification restera intacte et pourra être reprise juste après, ne t'en préoccupe pas.`;
+CONTEXTE IMPORTANT : une commande est actuellement en cours de clarification avec ce staff (${draftContext}). Si le nouveau message continue clairement cette commande (précision de plat, quantité, prix, nom ou numéro du client, adresse, livreur, réduction...), appelle "log_order" comme d'habitude. Si le message signale une intention TOTALEMENT différente (question chiffrée, renommer/modifier un client, ou message purement social), traite-la comme telle — la commande en cours de clarification restera intacte et pourra être reprise juste après, ne t'en préoccupe pas.`;
 }
 
-const ROUTER_TOOL_SCHEMAS = [
-  { name: "log_order", description: "Enregistrer ou continuer de préciser une commande déjà servie/livrée (client, plats, prix, quantités, localisation, livreur)." },
-  { name: "query_business_stats", description: "Répondre à une question chiffrée sur l'activité business (revenus, marge, plats vendus, livraisons d'un livreur, bilan...)." },
-] as const;
+const CLIENT_IDENTIFIER_PARAM = { type: "string" as const, description: "Nom actuel ou numéro de téléphone du client, tel que mentionné par le staff, pour l'identifier" };
 
-const GROQ_ROUTER_TOOLS: Groq.Chat.Completions.ChatCompletionTool[] = ROUTER_TOOL_SCHEMAS.map((t) => ({
-  type: "function",
-  function: { name: t.name, description: t.description, parameters: { type: "object", properties: {}, required: [] } },
-}));
+const GROQ_ROUTER_TOOLS: Groq.Chat.Completions.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "log_order",
+      description: "Enregistrer ou continuer de préciser une commande déjà servie/livrée (client, plats, prix, quantités, localisation, livreur, réduction).",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "query_business_stats",
+      description: "Répondre à une question chiffrée sur l'activité business (revenus, marge, plats vendus, livraisons d'un livreur, bilan...).",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "rename_client",
+      description: "Renommer un client existant, identifié par son nom actuel ou son numéro de téléphone.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_identifier: CLIENT_IDENTIFIER_PARAM,
+          new_name: { type: "string", description: "Nouveau nom du client" },
+        },
+        required: ["client_identifier", "new_name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_client_phone",
+      description: "Modifier le numéro de téléphone d'un client existant, identifié par son nom ou son numéro actuel.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_identifier: CLIENT_IDENTIFIER_PARAM,
+          new_phone: { type: "string", description: "Nouveau numéro de téléphone, tel que donné par le staff (avec indicatif si précisé)" },
+        },
+        required: ["client_identifier", "new_phone"],
+      },
+    },
+  },
+];
 
-const CLAUDE_ROUTER_TOOLS: Anthropic.Tool[] = ROUTER_TOOL_SCHEMAS.map((t) => ({
-  name: t.name,
-  description: t.description,
-  input_schema: { type: "object", properties: {}, required: [] },
-}));
+const CLAUDE_ROUTER_TOOLS: Anthropic.Tool[] = [
+  {
+    name: "log_order",
+    description: "Enregistrer ou continuer de préciser une commande déjà servie/livrée (client, plats, prix, quantités, localisation, livreur, réduction).",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "query_business_stats",
+    description: "Répondre à une question chiffrée sur l'activité business (revenus, marge, plats vendus, livraisons d'un livreur, bilan...).",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "rename_client",
+    description: "Renommer un client existant, identifié par son nom actuel ou son numéro de téléphone.",
+    input_schema: {
+      type: "object",
+      properties: {
+        client_identifier: CLIENT_IDENTIFIER_PARAM,
+        new_name: { type: "string", description: "Nouveau nom du client" },
+      },
+      required: ["client_identifier", "new_name"],
+    },
+  },
+  {
+    name: "update_client_phone",
+    description: "Modifier le numéro de téléphone d'un client existant, identifié par son nom ou son numéro actuel.",
+    input_schema: {
+      type: "object",
+      properties: {
+        client_identifier: CLIENT_IDENTIFIER_PARAM,
+        new_phone: { type: "string", description: "Nouveau numéro de téléphone, tel que donné par le staff (avec indicatif si précisé)" },
+      },
+      required: ["client_identifier", "new_phone"],
+    },
+  },
+];
+
+function intentFromToolArgs(name: string, args: Record<string, unknown>): StaffIntent | null {
+  switch (name) {
+    case "log_order":
+      return { tool: "log_order" };
+    case "query_business_stats":
+      return { tool: "query_business_stats" };
+    case "rename_client":
+      return { tool: "rename_client", clientIdentifier: String(args.client_identifier ?? ""), newName: String(args.new_name ?? "") };
+    case "update_client_phone":
+      return { tool: "update_client_phone", clientIdentifier: String(args.client_identifier ?? ""), newPhone: String(args.new_phone ?? "") };
+    default:
+      return null;
+  }
+}
 
 async function classifyIntentWithGroq(message: string, draftContext: string | null): Promise<StaffIntent> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -457,8 +548,11 @@ async function classifyIntentWithGroq(message: string, draftContext: string | nu
 
   const choice = completion.choices[0];
   const toolCall = choice?.message?.tool_calls?.[0];
-  if (toolCall?.function.name === "log_order") return { tool: "log_order" };
-  if (toolCall?.function.name === "query_business_stats") return { tool: "query_business_stats" };
+  if (toolCall) {
+    const args = JSON.parse(toolCall.function.arguments || "{}") as Record<string, unknown>;
+    const intent = intentFromToolArgs(toolCall.function.name, args);
+    if (intent) return intent;
+  }
   return { tool: "small_talk", reply: choice?.message?.content?.trim() || "👍" };
 }
 
@@ -477,8 +571,10 @@ async function classifyIntentWithClaude(message: string, draftContext: string | 
     });
 
     const toolUse = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    if (toolUse?.name === "log_order") return { tool: "log_order" };
-    if (toolUse?.name === "query_business_stats") return { tool: "query_business_stats" };
+    if (toolUse) {
+      const intent = intentFromToolArgs(toolUse.name, toolUse.input as Record<string, unknown>);
+      if (intent) return intent;
+    }
 
     const text = response.content.find((b) => b.type === "text");
     return { tool: "small_talk", reply: text && text.type === "text" ? text.text.trim() : "👍" };

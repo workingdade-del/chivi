@@ -1,17 +1,17 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendWhatsappText, extractMessageId, normalizePhone, buildStaffLogSummaryMessage, buildStaffLogSavedMessage } from "@/lib/whatsapp";
 import { updateStaffLogDraft, emptyStaffLogDraft, type StaffLogDraft } from "@/lib/staff-log-ai";
-import { findBestMatch } from "@/lib/fuzzy-match";
+import { findBestMatch, similarity } from "@/lib/fuzzy-match";
 import { findRecentForwardedLocation } from "@/lib/staff-location";
-import { handleStaffQuestion } from "@/lib/staff-query";
 import { classifyStaffIntent } from "@/lib/ai-provider";
+import { handleNonOrderIntent } from "@/lib/staff-intent-dispatch";
 
 /** Au-delà de cette inactivité, une session /commande-log en cours est abandonnée silencieusement (pas de message, contrairement au reste du flow). */
 const STALE_LOG_SESSION_MINUTES = 15;
 
 const CONFIRMATION_WORDS = ["oui", "ok", "okay", "correct", "confirme", "confirmé", "c'est bon", "cest bon", "parfait", "exact", "c'est ca", "cest ca", "voila", "voilà"];
 
-function isConfirmationReply(text: string): boolean {
+export function isConfirmationReply(text: string): boolean {
   const normalized = text
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -20,10 +20,28 @@ function isConfirmationReply(text: string): boolean {
   return CONFIRMATION_WORDS.some((w) => normalized === w || normalized.startsWith(`${w} `) || normalized.startsWith(`${w},`));
 }
 
+/** Un candidat plat/variante pour le matching flou — voir buildDishCandidates. */
+interface DishCandidate {
+  matchLabel: string;
+  displayLabel: string;
+  productId: string;
+  productName: string;
+  variantId: string | null;
+  variantName: string | null;
+  unitPrice: number;
+}
+
+interface PendingDisambiguation {
+  platIndex: number;
+  originalText: string;
+  options: DishCandidate[];
+}
+
 interface StaffLogSessionRow {
   id: string;
   draft: StaffLogDraft;
   awaiting_final_confirmation: boolean;
+  pending_disambiguation: PendingDisambiguation | null;
 }
 
 /** Résumé court d'un draft en cours, donné au routeur d'intentions (classifyStaffIntent) pour qu'il distingue "le staff continue cette commande" de "le staff change de sujet". */
@@ -55,11 +73,137 @@ export async function getActiveLogSession(staffPhone: string): Promise<StaffLogS
   const supabase = createServiceClient();
   const { data } = await supabase
     .from("staff_log_sessions")
-    .select("id, draft, awaiting_final_confirmation")
+    .select("id, draft, awaiting_final_confirmation, pending_disambiguation")
     .eq("staff_phone", staffPhone)
     .eq("status", "awaiting_confirmation")
     .maybeSingle();
   return data as StaffLogSessionRow | null;
+}
+
+/** Construit la liste des candidats plat/variante contre lesquels matcher — chaque produit seul (prix de base) ET chaque combinaison produit+variante (prix de la variante), pour que le staff puisse décrire soit le plat de base, soit directement une variante précise ("Frites Alloco poulet Mayo") sans jamais avoir à connaître le libellé exact attendu. */
+function buildDishCandidates(
+  products: { id: string; name: string; base_price: number }[],
+  variants: { id: string; product_id: string; name: string; price: number }[]
+): DishCandidate[] {
+  const candidates: DishCandidate[] = [];
+  for (const p of products) {
+    candidates.push({ matchLabel: p.name, displayLabel: p.name, productId: p.id, productName: p.name, variantId: null, variantName: null, unitPrice: p.base_price });
+    for (const v of variants.filter((v) => v.product_id === p.id)) {
+      candidates.push({
+        matchLabel: `${p.name} ${v.name}`,
+        displayLabel: `${p.name} (${v.name})`,
+        productId: p.id,
+        productName: p.name,
+        variantId: v.id,
+        variantName: v.name,
+        unitPrice: v.price,
+      });
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Découpe en mots significatifs (>2 caractères) pour la couverture par mot
+ * ci-dessous — même normalisation (accents/casse) que similarity().
+ */
+function normalizeWords(text: string): string[] {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2);
+}
+
+/**
+ * Fraction des mots de la requête retrouvés (par similarité, pas égalité
+ * stricte — tolère une petite faute de frappe par mot) dans le libellé
+ * candidat. Contrairement à similarity() (Levenshtein sur la chaîne
+ * entière), cette métrique RÉCOMPENSE le candidat qui explique LE PLUS de ce
+ * que le staff a dit : un plat de base dont le nom est un préfixe exact du
+ * message ("Frites Alloco CHIVI" vs "Frites Alloco chivi variante poulet
+ * mayo") gagne un bonus "inclusion" à 0.9 avec similarity() seule, battant à
+ * tort une combinaison plat+variante plus complète mais moins similaire
+ * caractère-par-caractère — la couverture par mot corrige cet effet.
+ */
+function queryWordCoverage(query: string, label: string): number {
+  const queryWords = normalizeWords(query);
+  const labelWords = normalizeWords(label);
+  if (queryWords.length === 0 || labelWords.length === 0) return 0;
+  let matched = 0;
+  for (const qw of queryWords) {
+    const best = Math.max(0, ...labelWords.map((lw) => similarity(qw, lw)));
+    if (best >= 0.75) matched += 1;
+  }
+  return matched / queryWords.length;
+}
+
+/** Score combiné : couverture par mot (dominante) + similarité caractère entière (tolère les fautes de frappe sur un plat unique, sans variante à départager). */
+function dishScore(query: string, label: string): number {
+  return queryWordCoverage(query, label) * 0.7 + similarity(query, label) * 0.3;
+}
+
+/**
+ * Seuils du matching plat/variante — délibérément permissifs par rapport à
+ * findBestMatch (0.55 par défaut) : le staff décrit rarement un plat avec le
+ * libellé exact du menu ("Jus pamplemousse" au lieu de "Jus Pamplemousse
+ * (Youki)"), et un rejet silencieux en dessous du seuil forçait le staff à
+ * deviner la formulation exacte par essais-erreurs. Au-dessus de
+ * HIGH_CONFIDENCE, on accepte directement ; entre les deux seuils, on
+ * propose les meilleurs candidats au lieu d'échouer platement.
+ */
+const DISH_MATCH_HIGH_CONFIDENCE = 0.8;
+const DISH_MATCH_LOW_THRESHOLD = 0.35;
+/** Écart en dessous duquel deux candidats sont considérés "à égalité" plutôt que l'un strictement meilleur que l'autre. */
+const DISH_MATCH_TIE_MARGIN = 0.05;
+
+interface DishMatchResult {
+  certain: DishCandidate | null;
+  ambiguous: DishCandidate[];
+}
+
+function matchDish(query: string, candidates: DishCandidate[]): DishMatchResult {
+  const scored = candidates.map((c) => ({ c, score: dishScore(query, c.matchLabel) })).sort((a, b) => b.score - a.score);
+  if (!scored.length || scored[0].score < DISH_MATCH_LOW_THRESHOLD) return { certain: null, ambiguous: [] };
+
+  // Regroupe les candidats dont le score est quasi égal au meilleur — sans
+  // ça, un score maximal partagé par plusieurs candidats DISTINCTS (ex:
+  // "jus youki" qui correspond aussi bien à 3 parfums différents) choisirait
+  // arbitrairement le premier au lieu de demander de préciser.
+  const topScore = scored[0].score;
+  const contenders: DishCandidate[] = [];
+  const seenLabels = new Set<string>();
+  for (const s of scored) {
+    if (s.score < topScore - DISH_MATCH_TIE_MARGIN) break;
+    if (seenLabels.has(s.c.displayLabel)) continue;
+    seenLabels.add(s.c.displayLabel);
+    contenders.push(s.c);
+  }
+
+  if (topScore >= DISH_MATCH_HIGH_CONFIDENCE) {
+    if (contenders.length === 1) return { certain: contenders[0], ambiguous: [] };
+    // Égalité entre le produit de base et SES PROPRES variantes (aucune
+    // variante précise mentionnée) : le produit de base est l'interprétation
+    // par défaut la plus sûre. Une égalité entre produits DIFFÉRENTS reste ambiguë.
+    const sameProduct = contenders.every((c) => c.productId === contenders[0].productId);
+    if (sameProduct) {
+      const base = contenders.find((c) => c.variantId === null);
+      if (base) return { certain: base, ambiguous: [] };
+    }
+    return { certain: null, ambiguous: contenders.slice(0, 3) };
+  }
+
+  const top: DishCandidate[] = [];
+  const seen = new Set<string>();
+  for (const s of scored) {
+    if (s.score < DISH_MATCH_LOW_THRESHOLD) break;
+    if (seen.has(s.c.displayLabel)) continue;
+    seen.add(s.c.displayLabel);
+    top.push(s.c);
+    if (top.length >= 3) break;
+  }
+  return { certain: null, ambiguous: top };
 }
 
 interface ResolvedItem {
@@ -81,9 +225,11 @@ interface ResolvedDraft {
   isExistingClient: boolean;
   matchedItems: ResolvedItem[];
   calculatedTotal: number;
+  discountAmount: number;
   finalTotal: number;
   locationText: string | null;
   matchedDriver: { id: string; name: string; phone: string } | null;
+  pendingDisambiguation: PendingDisambiguation | null;
 }
 
 /**
@@ -107,22 +253,32 @@ async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
   const { data: products } = await supabase.from("products").select("id, name, base_price").eq("is_available", true).order("id");
   const { data: variantRows } = await supabase.from("product_variants").select("id, product_id, name, price").eq("is_available", true).order("id");
   console.log("[staff-log] resolveDraft — entrée", { draft });
+
+  const dishCandidates = buildDishCandidates(products ?? [], variantRows ?? []);
   const matchedItems: ResolvedItem[] = [];
   const unmatchedItemNames: string[] = [];
-  for (const plat of draft.plats) {
-    const match = findBestMatch(plat.nom, products ?? [], (p) => p.name);
-    if (match) {
-      let unitPrice = match.item.base_price;
-      let variantId: string | null = null;
-      let variantName: string | null = null;
-      if (plat.prixUnitaire != null) {
-        // Le staff a précisé un prix pour CE plat — s'il correspond
-        // exactement à une variante connue du menu, on sélectionne CETTE
-        // variante (pas le prix de base) ; sinon on respecte quand même le
-        // prix annoncé plutôt que d'afficher le prix de base en silence —
-        // c'est exactement l'incohérence du bug CHV-2086/2088 ("1x Atassi
-        // CHIVI à 1000 FCFA" alors que le staff avait dit 1200).
-        const productVariants = (variantRows ?? []).filter((v) => v.product_id === match.item.id);
+  let pendingDisambiguation: PendingDisambiguation | null = null;
+
+  for (let i = 0; i < draft.plats.length; i++) {
+    const plat = draft.plats[i];
+    // 1. Matching par nom contre plats ET variantes combinés (plus permissif
+    // que l'ancien matching produit-seul) — couvre directement une
+    // formulation de variante ("Frites Alloco poulet Mayo") sans dépendre
+    // uniquement d'un prix explicite pour la sélectionner.
+    const nameMatch = matchDish(plat.nom, dishCandidates);
+
+    if (nameMatch.certain) {
+      const c = nameMatch.certain;
+      let unitPrice = c.unitPrice;
+      let variantId = c.variantId;
+      let variantName = c.variantName;
+      // Si le nom a résolu vers le produit de BASE (pas de variante trouvée
+      // par nom) mais qu'un prix précis a aussi été donné, le prix reste le
+      // signal le plus fiable pour choisir ENTRE les variantes d'un même
+      // plat (ex: "Atassi variante de 1200f" — le nom seul ne distingue pas
+      // la variante, mais le prix si).
+      if (variantId === null && plat.prixUnitaire != null) {
+        const productVariants = (variantRows ?? []).filter((v) => v.product_id === c.productId);
         const variantMatch = productVariants.find((v) => v.price === plat.prixUnitaire);
         if (variantMatch) {
           unitPrice = variantMatch.price;
@@ -132,21 +288,27 @@ async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
           unitPrice = plat.prixUnitaire;
         }
       }
-      matchedItems.push({
-        productId: match.item.id,
-        productName: match.item.name,
-        variantId,
-        variantName,
-        quantity: plat.quantite,
-        unitPrice,
-        lineTotal: unitPrice * plat.quantite,
-      });
-    } else {
-      unmatchedItemNames.push(plat.nom);
+      matchedItems.push({ productId: c.productId, productName: c.productName, variantId, variantName, quantity: plat.quantite, unitPrice, lineTotal: unitPrice * plat.quantite });
+      continue;
     }
+
+    if (nameMatch.ambiguous.length > 0) {
+      // Une seule désambiguïsation à la fois — si un autre plat est déjà en
+      // attente, celui-ci reste simplement "non résolu" pour ce tour ; il
+      // sera re-proposé au tour suivant une fois le premier tranché.
+      if (!pendingDisambiguation) {
+        pendingDisambiguation = { platIndex: i, originalText: plat.nom, options: nameMatch.ambiguous };
+      }
+      unmatchedItemNames.push(plat.nom);
+      continue;
+    }
+
+    unmatchedItemNames.push(plat.nom);
   }
-  const calculatedTotal = matchedItems.reduce((s, i) => s + i.lineTotal, 0);
-  // Le staff peut donner un total différent du calcul (réduction, arrangement réel) — on le respecte tel quel.
+  const rawCalculatedTotal = matchedItems.reduce((s, i) => s + i.lineTotal, 0);
+  const discountAmount = draft.reductionFcfa ?? 0;
+  const calculatedTotal = Math.max(0, rawCalculatedTotal - discountAmount);
+  // Le staff peut donner un total différent du calcul (arrangement réel) — on le respecte tel quel, réduction déjà incluse dedans si mentionnée en même temps.
   const finalTotal = draft.totalFcfa ?? calculatedTotal;
 
   let clientPhone = draft.clientTel;
@@ -202,22 +364,34 @@ async function resolveDraft(draft: StaffLogDraft): Promise<ResolvedDraft> {
     isExistingClient,
     matchedItems,
     unmatchedItemNames,
+    pendingDisambiguation,
     calculatedTotal,
     finalTotal: draft.totalFcfa ?? calculatedTotal,
   });
 
+  // La désambiguïsation numérotée prend le pas sur le message générique
+  // "il me manque..." — c'est l'action concrète et immédiate à donner au
+  // staff, plutôt qu'une simple liste de champs manquants.
+  let clarification: string | null = issues.length ? `Il me manque encore : ${issues.join(" ; ")}. Peux-tu préciser ?` : null;
+  if (pendingDisambiguation) {
+    const optionsList = pendingDisambiguation.options.map((o, idx) => `${idx + 1}) ${o.displayLabel}`).join("\n");
+    clarification = `Je ne suis pas sûr du plat "${pendingDisambiguation.originalText}" — vouliez-vous dire :\n${optionsList}\nRéponds avec le numéro, ou précise autrement.`;
+  }
+
   return {
     ready: issues.length === 0,
-    clarification: issues.length ? `Il me manque encore : ${issues.join(" ; ")}. Peux-tu préciser ?` : null,
+    clarification,
     clientName: draft.clientNom ?? "",
     clientPhone,
     clientProfileId,
     isExistingClient,
     matchedItems,
     calculatedTotal,
+    discountAmount,
     finalTotal,
     locationText: draft.localisation,
     matchedDriver,
+    pendingDisambiguation,
   };
 }
 
@@ -253,11 +427,16 @@ async function sendSummaryOrClarification(staffPhone: string, sessionId: string,
   }
 
   if (!resolved.ready) {
-    await supabase.from("staff_log_sessions").update({ draft, awaiting_final_confirmation: false }).eq("id", sessionId);
+    await supabase
+      .from("staff_log_sessions")
+      .update({ draft, awaiting_final_confirmation: false, pending_disambiguation: resolved.pendingDisambiguation })
+      .eq("id", sessionId);
     await sendToStaff(staffPhone, resolved.clarification!);
     return;
   }
 
+  // Prêt : aucune désambiguïsation ne peut rester en attente (elle aurait
+  // empêché `ready`), mais on la nettoie explicitement par sécurité.
   const summary = buildStaffLogSummaryMessage({
     clientName: resolved.clientName,
     clientPhone: resolved.clientPhone,
@@ -270,10 +449,11 @@ async function sendSummaryOrClarification(staffPhone: string, sessionId: string,
       lineTotal: i.lineTotal,
     })),
     total: resolved.finalTotal,
+    discountAmount: resolved.discountAmount,
     location: resolved.locationText,
     driverName: resolved.matchedDriver?.name ?? null,
   });
-  await supabase.from("staff_log_sessions").update({ draft, awaiting_final_confirmation: true }).eq("id", sessionId);
+  await supabase.from("staff_log_sessions").update({ draft, awaiting_final_confirmation: true, pending_disambiguation: null }).eq("id", sessionId);
   await sendToStaff(staffPhone, summary);
 }
 
@@ -309,24 +489,74 @@ export async function startLogSession(staffPhone: string, initialText: string): 
   await sendSummaryOrClarification(staffPhone, session.id, updated);
 }
 
-/** Poursuit une session /commande-log active : soit une confirmation finale ("oui"), soit une correction/précision en langage libre (log_order), soit une question business ou un message social qui interrompt temporairement sans toucher la session — voir classifyStaffIntent. */
+/**
+ * Résout une réponse de désambiguïsation ("1", "2 la petite", ou juste le
+ * libellé) DE FAÇON DÉTERMINISTE — jamais re-devinée par l'IA. L'IA a
+ * démontré, sur cette même conversation (duplication de plats, dérive du
+ * numéro client), qu'elle ne préserve pas fiablement un état structuré d'un
+ * tour à l'autre ; un choix numéroté est simple et sans ambiguïté à
+ * résoudre en code, donc on ne lui délègue pas cette étape.
+ */
+function tryResolveDisambiguationReply(pending: PendingDisambiguation, replyText: string): DishCandidate | null {
+  const trimmed = replyText.trim();
+  const numMatch = trimmed.match(/^(\d+)/);
+  if (numMatch) {
+    const idx = parseInt(numMatch[1], 10) - 1;
+    return pending.options[idx] ?? null;
+  }
+  return findBestMatch(trimmed, pending.options, (o) => o.displayLabel, 0.5)?.item ?? null;
+}
+
+function applyDisambiguationChoice(draft: StaffLogDraft, platIndex: number, candidate: DishCandidate): StaffLogDraft {
+  const plats = [...draft.plats];
+  const original = plats[platIndex];
+  if (!original) return draft;
+  // matchLabel (pas displayLabel) : ré-exécuté contre matchDish au prochain
+  // resolveDraft, il doit matcher ce MÊME candidat avec un score de 1
+  // (identique) pour ne jamais retomber en ambigu ou pire, sur un autre
+  // candidat — displayLabel a un formatage (parenthèses) qui n'a aucune
+  // raison de rester identique après normalisation. prixUnitaire n'est PAS
+  // touché ici : une fois le nom certain, la variante vient directement du
+  // candidat (pas d'un lookup par prix), donc le laisser tel quel évite
+  // qu'un prix coïncidant par hasard avec une autre variante ne la
+  // sélectionne à tort.
+  plats[platIndex] = { ...original, nom: candidate.matchLabel };
+  return { ...draft, plats };
+}
+
+/** Poursuit une session /commande-log active : soit une confirmation finale ("oui"), soit une réponse à une désambiguïsation de plat en attente, soit une correction/précision en langage libre (log_order), soit une question business ou un message social qui interrompt temporairement sans toucher la session — voir classifyStaffIntent. */
 export async function continueLogSession(staffPhone: string, session: StaffLogSessionRow, replyText: string): Promise<void> {
-  console.log("[staff-log] continueLogSession", { staffPhone, sessionId: session.id, awaitingFinalConfirmation: session.awaiting_final_confirmation, replyText });
+  console.log("[staff-log] continueLogSession", { staffPhone, sessionId: session.id, awaitingFinalConfirmation: session.awaiting_final_confirmation, hasPendingDisambiguation: !!session.pending_disambiguation, replyText });
 
   if (session.awaiting_final_confirmation && isConfirmationReply(replyText)) {
     await finalizeLogSession(staffPhone, session);
     return;
   }
 
-  // Une question business ("fais-moi le point du mois") ou un message social
-  // ("super", "merci") peut arriver EN PLEIN MILIEU d'une session
+  if (session.pending_disambiguation) {
+    const chosen = tryResolveDisambiguationReply(session.pending_disambiguation, replyText);
+    if (chosen) {
+      console.log("[staff-log] désambiguïsation résolue", { staffPhone, sessionId: session.id, chosen: chosen.displayLabel });
+      const updatedDraft = applyDisambiguationChoice(session.draft, session.pending_disambiguation.platIndex, chosen);
+      await sendSummaryOrClarification(staffPhone, session.id, updatedDraft);
+      return;
+    }
+    // La réponse ne ressemble à aucune option proposée — on abandonne cette
+    // désambiguïsation (persistée à null par sendSummaryOrClarification au
+    // prochain resolveDraft) et on retraite le message normalement
+    // ci-dessous (nouvelle intention, ou nouvelle tentative de description).
+    console.log("[staff-log] réponse ne correspond à aucune option de désambiguïsation — retraitement normal", { staffPhone, sessionId: session.id, replyText });
+  }
+
+  // Une question business, une action client (renommer/changer numéro) ou
+  // un message social peut arriver EN PLEIN MILIEU d'une session
   // /commande-log active — le check global dans staff-order.ts ne voit
   // JAMAIS ce cas puisqu'une session active court-circuite tout avant
   // d'atteindre ce check. Sans ce garde-fou ICI, le message était absorbé à
   // tort comme une correction de la commande en cours (updateStaffLogDraft
   // le traitait comme du texte à intégrer au draft, produisant un nouveau
   // résumé, ou pire, dupliquant/corrompant le draft). La session active
-  // n'est PAS touchée dans les deux cas : le staff peut reprendre sa
+  // n'est PAS touchée dans tous ces cas : le staff peut reprendre sa
   // commande juste après. classifyStaffIntent reçoit un résumé du draft en
   // cours pour distinguer "continue cette commande" de "change de sujet".
   const intent = await classifyStaffIntent(replyText, summarizeDraftForContext(session.draft)).catch((err) => {
@@ -335,14 +565,8 @@ export async function continueLogSession(staffPhone: string, session: StaffLogSe
   });
   console.log("[staff-log] intention classifiée pendant une session active", { staffPhone, sessionId: session.id, intent: intent.tool, replyText });
 
-  if (intent.tool === "query_business_stats") {
-    console.log("[staff-log] question business détectée pendant une session active — session laissée intacte", { staffPhone, sessionId: session.id });
-    await handleStaffQuestion(staffPhone, replyText);
-    return;
-  }
-  if (intent.tool === "small_talk") {
-    console.log("[staff-log] message social détecté pendant une session active — session laissée intacte", { staffPhone, sessionId: session.id });
-    await sendToStaff(staffPhone, intent.reply);
+  if (await handleNonOrderIntent(staffPhone, intent, replyText)) {
+    console.log("[staff-log] intention non-log_order traitée pendant une session active — session laissée intacte", { staffPhone, sessionId: session.id, intent: intent.tool });
     return;
   }
 
@@ -388,6 +612,7 @@ async function finalizeLogSession(staffPhone: string, session: StaffLogSessionRo
       payment_method: "cash_livraison",
       subtotal: resolved.finalTotal,
       delivery_fee: 0,
+      discount_amount: resolved.discountAmount,
       total: resolved.finalTotal,
       delivery_address: resolved.locationText,
       source: "staff_manual_log",

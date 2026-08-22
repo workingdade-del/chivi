@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
     orderDate?: string;
     deliveryAddress?: string;
     deliveryFee?: number;
+    discountAmount?: number;
     driverId?: string;
     notify?: boolean;
   };
@@ -83,7 +84,12 @@ export async function POST(req: NextRequest) {
 
   const status: OrderStatus = body.status ?? "recue";
   const deliveryFee = body.deliveryFee && !Number.isNaN(body.deliveryFee) ? body.deliveryFee : 0;
-  const subtotal = body.items.reduce((s, i) => s + i.lineTotal, 0);
+  const discountAmount = body.discountAmount && !Number.isNaN(body.discountAmount) && body.discountAmount > 0 ? Math.round(body.discountAmount) : 0;
+  const rawSubtotal = body.items.reduce((s, i) => s + i.lineTotal, 0);
+  // subtotal stocke déjà le CA net (convention établie ailleurs — Reports/
+  // Dashboard/Finance lisent subtotal comme base de revenu) : discount_amount
+  // reste une colonne informative/d'audit, mais la réduction est appliquée ICI.
+  const subtotal = Math.max(0, rawSubtotal - discountAmount);
   const total = subtotal + deliveryFee;
 
   // Saisie d'une commande passée : on fixe created_at à midi ce jour-là
@@ -100,6 +106,7 @@ export async function POST(req: NextRequest) {
       payment_method: body.paymentMethod,
       subtotal,
       delivery_fee: deliveryFee,
+      discount_amount: discountAmount,
       total,
       delivery_address: body.deliveryAddress ? sanitizeText(body.deliveryAddress, 300) : null,
       source: "admin_manual",

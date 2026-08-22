@@ -30,12 +30,15 @@ export function EditOrderModal({
     }))
   );
   const [deliveryAddress, setDeliveryAddress] = useState(order.delivery_address ?? "");
+  const [discountAmount, setDiscountAmount] = useState(order.discount_amount);
+  const [orderDate, setOrderDate] = useState(() => order.created_at.slice(0, 10));
   const [overrideTotal, setOverrideTotal] = useState(false);
   const [manualTotal, setManualTotal] = useState(order.total);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const subtotal = items.reduce((s, i) => s + i.lineTotal, 0);
+  const rawSubtotal = items.reduce((s, i) => s + i.lineTotal, 0);
+  const subtotal = Math.max(0, rawSubtotal - discountAmount);
   const computedTotal = subtotal + order.delivery_fee;
 
   async function handleSave() {
@@ -57,6 +60,8 @@ export function EditOrderModal({
             supplements: i.supplementIds.map((id, idx) => ({ supplementId: id, supplementName: i.supplementNames[idx] })),
           })),
           deliveryAddress: deliveryAddress.trim() || null,
+          discountAmount,
+          orderDate,
           totalOverride: overrideTotal ? manualTotal : null,
         }),
       });
@@ -93,10 +98,39 @@ export function EditOrderModal({
           className="w-full border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2.5 text-sm mb-3"
         />
 
-        <div className="flex justify-between text-sm text-[#6d6358] py-1">
-          <span>Sous-total (auto)</span>
-          <span>{formatFcfa(subtotal)}</span>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-bold text-[#9a8b78] mb-1.5">Date de la commande</label>
+            <input
+              type="date"
+              value={orderDate}
+              onChange={(e) => setOrderDate(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              className="w-full border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-[#9a8b78] mb-1.5">Réduction (FCFA)</label>
+            <input
+              type="number"
+              min={0}
+              value={discountAmount}
+              onChange={(e) => setDiscountAmount(Number(e.target.value))}
+              className="w-full border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2.5 text-sm"
+            />
+          </div>
         </div>
+
+        <div className="flex justify-between text-sm text-[#6d6358] py-1">
+          <span>Sous-total des articles</span>
+          <span>{formatFcfa(rawSubtotal)}</span>
+        </div>
+        {discountAmount > 0 && (
+          <div className="flex justify-between text-sm text-chilli py-1">
+            <span>Réduction</span>
+            <span>-{formatFcfa(discountAmount)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-sm text-[#6d6358] py-1">
           <span>Livraison</span>
           <span>{formatFcfa(order.delivery_fee)}</span>

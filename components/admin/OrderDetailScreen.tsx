@@ -189,6 +189,7 @@ export function OrderDetailScreen({ order, drivers }: { order: OrderDetailData; 
         )}
         <div className="h-px bg-[#efe6d3] my-4.5" />
         <Row label="Sous-total" value={formatFcfa(order.subtotal)} />
+        {order.discount_amount > 0 && <Row label="Réduction appliquée" value={`-${formatFcfa(order.discount_amount)}`} />}
         <Row label="Livraison" value={formatFcfa(order.delivery_fee)} />
         <div className="flex justify-between items-center pt-1.5">
           <span className="font-bold text-ink">Total</span>

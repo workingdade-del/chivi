@@ -36,6 +36,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     items?: UpdateItemPayload[];
     deliveryAddress?: string | null;
     totalOverride?: number | null;
+    discountAmount?: number;
+    /** "YYYY-MM-DD" — pour corriger la date d'une commande déjà saisie. */
+    orderDate?: string;
   };
 
   if (!body.items || body.items.length === 0) {
@@ -55,9 +58,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Commande introuvable" }, { status: 404 });
   }
 
-  const subtotal = body.items.reduce((s, i) => s + i.lineTotal, 0);
+  const rawSubtotal = body.items.reduce((s, i) => s + i.lineTotal, 0);
+  const discountAmount = body.discountAmount && !Number.isNaN(body.discountAmount) && body.discountAmount > 0 ? Math.round(body.discountAmount) : 0;
+  // subtotal stocke déjà le CA net (convention établie ailleurs — Reports/
+  // Dashboard/Finance lisent subtotal comme base de revenu).
+  const subtotal = Math.max(0, rawSubtotal - discountAmount);
   const total = body.totalOverride != null && !Number.isNaN(body.totalOverride) ? body.totalOverride : subtotal + order.delivery_fee;
   const deliveryAddress = body.deliveryAddress ? sanitizeText(body.deliveryAddress, 300) : null;
+  // Saisie d'une commande passée : midi ce jour-là plutôt que minuit pile,
+  // pour rester loin de toute frontière de jour (fuseau Cotonou vs UTC
+  // serveur — voir lib/admin.ts).
+  const createdAt = body.orderDate ? `${body.orderDate}T12:00:00.000Z` : undefined;
 
   const { error: deleteError } = await supabase.from("order_items").delete().eq("order_id", orderId);
   if (deleteError) {
@@ -98,11 +109,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { error: updateError } = await supabase
     .from("orders")
-    .update({ subtotal, total, delivery_address: deliveryAddress })
+    .update({
+      subtotal,
+      discount_amount: discountAmount,
+      total,
+      delivery_address: deliveryAddress,
+      ...(createdAt ? { created_at: createdAt } : {}),
+    })
     .eq("id", orderId);
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+
+  // Le trigger Finance (orders_create_sales_transaction) ne se redéclenche
+  // que sur INSERT ou changement de statut — modifier created_at ici ne le
+  // refait PAS tourner, donc la transaction "Ventes" déjà générée (si la
+  // commande était déjà livrée) resterait datée à l'ancien jour sans cette
+  // synchronisation manuelle.
+  if (body.orderDate) {
+    const { error: financeError } = await supabase
+      .from("finance_transactions")
+      .update({ date: body.orderDate })
+      .eq("source_type", "order")
+      .eq("source_id", orderId);
+    if (financeError) {
+      console.error("[admin-update-order] échec synchronisation date finance_transactions", { orderId, error: financeError.message });
+    }
   }
 
   return NextResponse.json({ updated: true });

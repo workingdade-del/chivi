@@ -12,13 +12,15 @@ export interface StaffLogDraft {
   clientTel: string | null;
   plats: StaffLogDraftItem[];
   totalFcfa: number | null;
+  /** Réduction manuelle mentionnée par le staff ("avec une réduction de 200f") — soustraite du total calculé, distincte de totalFcfa (montant global explicite qui, lui, prime sur tout calcul). */
+  reductionFcfa: number | null;
   localisation: string | null;
   livreurNom: string | null;
   livreurTel: string | null;
 }
 
 export function emptyStaffLogDraft(): StaffLogDraft {
-  return { clientNom: null, clientTel: null, plats: [], totalFcfa: null, localisation: null, livreurNom: null, livreurTel: null };
+  return { clientNom: null, clientTel: null, plats: [], totalFcfa: null, reductionFcfa: null, localisation: null, livreurNom: null, livreurTel: null };
 }
 
 /** JSON Schema du brouillon — utilisé côté Claude (structured outputs, output_config.format) pour contraindre la sortie sans dépendre du "prefill" (rejeté par Claude Sonnet 5 et toute la famille 4.6+). */
@@ -41,11 +43,12 @@ const STAFF_LOG_DRAFT_SCHEMA = {
       },
     },
     total_fcfa: { anyOf: [{ type: "number" }, { type: "null" }] },
+    reduction_fcfa: { anyOf: [{ type: "number" }, { type: "null" }] },
     localisation: { anyOf: [{ type: "string" }, { type: "null" }] },
     livreur_nom: { anyOf: [{ type: "string" }, { type: "null" }] },
     livreur_tel: { anyOf: [{ type: "string" }, { type: "null" }] },
   },
-  required: ["client_nom", "client_tel", "plats", "total_fcfa", "localisation", "livreur_nom", "livreur_tel"],
+  required: ["client_nom", "client_tel", "plats", "total_fcfa", "reduction_fcfa", "localisation", "livreur_nom", "livreur_tel"],
   additionalProperties: false,
 };
 
@@ -71,12 +74,15 @@ Ce message est soit une description initiale, soit une correction/précision sur
 
 IMPORTANT sur les prix : si un prix est mentionné juste après ou avec un plat précis (ex: "Atassi version 1200", "Frites grand format 1500f", "2 Poulet braisé à 2000 chacun"), ce prix est le PRIX UNITAIRE DE CE PLAT (il correspond en général à une variante précise du menu — taille, format...) → mets-le dans "prix_unitaire" pour ce plat, JAMAIS dans "total_fcfa". Ne remplis "total_fcfa" que si un montant global DISTINCT est donné pour toute la commande (ex: "total 3500f", "ça fait 5000 en tout") — le plus souvent absent, laisse-le alors à null (le total sera calculé automatiquement à partir des prix des plats).
 
+IMPORTANT sur les réductions : si le staff mentionne une réduction ou remise (ex: "avec une réduction de 200f", "moins 200f", "j'ai fait une remise de 500f"), mets son montant dans "reduction_fcfa". Ne confonds pas avec "total_fcfa" — la réduction est un montant à SOUSTRAIRE, pas le total final.
+
 Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
 {
   "client_nom": string ou null,
   "client_tel": string ou null (chiffres uniquement, retire espaces/tirets/plus),
   "plats": [{"nom": string, "quantite": number, "prix_unitaire": number ou null}],
   "total_fcfa": number ou null (UNIQUEMENT un montant global pour toute la commande, distinct des prix par plat),
+  "reduction_fcfa": number ou null (montant d'une réduction/remise mentionnée, à soustraire),
   "localisation": string ou null,
   "livreur_nom": string ou null,
   "livreur_tel": string ou null (chiffres uniquement)
@@ -95,6 +101,7 @@ Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
       client_tel?: string | null;
       plats?: { nom?: string; quantite?: number; prix_unitaire?: number | null }[];
       total_fcfa?: number | null;
+      reduction_fcfa?: number | null;
       localisation?: string | null;
       livreur_nom?: string | null;
       livreur_tel?: string | null;
@@ -111,6 +118,7 @@ Réponds UNIQUEMENT en JSON, sans texte autour, avec ce schéma exact :
         }))
         .filter((p) => p.nom.length > 0),
       totalFcfa: typeof parsed.total_fcfa === "number" && parsed.total_fcfa > 0 ? Math.round(parsed.total_fcfa) : null,
+      reductionFcfa: typeof parsed.reduction_fcfa === "number" && parsed.reduction_fcfa > 0 ? Math.round(parsed.reduction_fcfa) : null,
       localisation: parsed.localisation?.trim() || null,
       livreurNom: parsed.livreur_nom?.trim() || null,
       livreurTel: parsed.livreur_tel?.replace(/[^\d]/g, "") || null,
