@@ -5,6 +5,7 @@ import { getClientDetail } from "@/lib/admin";
 import { formatFcfa } from "@/lib/format";
 import { STATUS_LABELS } from "@/lib/order-status";
 import { ClientNameEditor } from "@/components/admin/ClientNameEditor";
+import { ClientPhoneEditor } from "@/components/admin/ClientPhoneEditor";
 import { ClientAddressEditor } from "@/components/admin/ClientAddressEditor";
 import { ClientNotesEditor } from "@/components/admin/ClientNotesEditor";
 
@@ -33,7 +34,7 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
           </div>
           <div className="h-px bg-[#efe6d3] my-4.5" />
           <div className="flex flex-col gap-3 text-left">
-            <Row label="WhatsApp" value={profile.whatsapp_phone} />
+            <ClientPhoneEditor clientId={profile.id} phone={profile.whatsapp_phone} />
             <Row label="Zone" value={profile.zone || "—"} />
             <Row
               label="Client depuis"
