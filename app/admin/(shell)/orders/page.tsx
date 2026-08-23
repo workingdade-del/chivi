@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getOrders } from "@/lib/admin";
+import { getOrders, type QuickPeriod } from "@/lib/admin";
 import { STATUS_LABELS, STATUS_COLORS } from "@/lib/order-status";
 import { formatFcfa } from "@/lib/format";
 import { RealtimeRefresh } from "@/components/admin/RealtimeRefresh";
@@ -12,33 +12,85 @@ const FILTERS: { id: OrderStatus | "all"; label: string }[] = [
   { id: "en_route", label: "En route" },
 ];
 
-export default async function AdminOrdersPage({ searchParams }: { searchParams: { status?: string } }) {
+const PERIODS: { id: QuickPeriod | "all"; label: string }[] = [
+  { id: "all", label: "Toutes périodes" },
+  { id: "jour", label: "Aujourd'hui" },
+  { id: "semaine", label: "Cette semaine" },
+  { id: "mois", label: "Ce mois" },
+];
+
+function buildHref(current: { status: OrderStatus | "all"; period: QuickPeriod | "all"; q: string }, overrides: Partial<typeof current>) {
+  const merged = { ...current, ...overrides };
+  const params = new URLSearchParams();
+  if (merged.status !== "all") params.set("status", merged.status);
+  if (merged.period !== "all") params.set("period", merged.period);
+  if (merged.q) params.set("q", merged.q);
+  const qs = params.toString();
+  return `/admin/orders${qs ? `?${qs}` : ""}`;
+}
+
+export default async function AdminOrdersPage({ searchParams }: { searchParams: { status?: string; period?: string; q?: string } }) {
   const activeFilter = (searchParams.status as OrderStatus | "all") || "all";
-  const orders = await getOrders(activeFilter === "all" ? undefined : activeFilter);
+  const activePeriod = (searchParams.period as QuickPeriod | "all") || "all";
+  const search = searchParams.q || "";
+  const current = { status: activeFilter, period: activePeriod, q: search };
+
+  const orders = await getOrders({
+    status: activeFilter === "all" ? undefined : activeFilter,
+    period: activePeriod === "all" ? undefined : activePeriod,
+    search: search || undefined,
+  });
 
   return (
     <div>
       <RealtimeRefresh tables={["orders"]} />
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-2">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <form action="/admin/orders" method="GET" className="flex gap-2 flex-1 min-w-[240px]">
+          {activeFilter !== "all" && <input type="hidden" name="status" value={activeFilter} />}
+          {activePeriod !== "all" && <input type="hidden" name="period" value={activePeriod} />}
+          <input
+            type="text"
+            name="q"
+            defaultValue={search}
+            placeholder="Rechercher (client, numéro, commande)…"
+            className="flex-1 border-2 border-[#e6dcc4] rounded-xl px-3.5 py-2 text-sm"
+          />
+          <button type="submit" className="px-4 py-2 rounded-xl text-[13px] font-bold bg-maroon text-gold">
+            Rechercher
+          </button>
+        </form>
+        <Link href="/admin/orders/new" className="px-4 py-2 rounded-full text-[13px] font-bold bg-maroon text-gold">
+          + Nouvelle commande
+        </Link>
+      </div>
+
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <div className="flex gap-2 flex-wrap">
           {FILTERS.map((f) => (
-          <Link
-            key={f.id}
-            href={f.id === "all" ? "/admin/orders" : `/admin/orders?status=${f.id}`}
-            className={`px-4 py-2 rounded-full text-[13px] font-bold ${
-              activeFilter === f.id ? "bg-maroon text-gold" : "bg-white border border-[#e2d6bd] text-[#6d6358] font-semibold"
-            }`}
-          >
+            <Link
+              key={f.id}
+              href={buildHref(current, { status: f.id })}
+              className={`px-4 py-2 rounded-full text-[13px] font-bold ${
+                activeFilter === f.id ? "bg-maroon text-gold" : "bg-white border border-[#e2d6bd] text-[#6d6358] font-semibold"
+              }`}
+            >
               {f.label}
             </Link>
           ))}
         </div>
-        <Link
-          href="/admin/orders/new"
-          className="px-4 py-2 rounded-full text-[13px] font-bold bg-maroon text-gold"
-        >
-          + Nouvelle commande
-        </Link>
+        <div className="flex gap-2 flex-wrap">
+          {PERIODS.map((p) => (
+            <Link
+              key={p.id}
+              href={buildHref(current, { period: p.id })}
+              className={`px-4 py-2 rounded-full text-[13px] font-bold ${
+                activePeriod === p.id ? "bg-maroon text-gold" : "bg-white border border-[#e2d6bd] text-[#6d6358] font-semibold"
+              }`}
+            >
+              {p.label}
+            </Link>
+          ))}
+        </div>
       </div>
 
       <div className="bg-white border border-[#ece2cd] rounded-2xl overflow-hidden">

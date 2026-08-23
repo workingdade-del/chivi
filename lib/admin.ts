@@ -334,7 +334,15 @@ export interface AdminOrderRow {
   driver_name: string | null;
 }
 
-export async function getOrders(filter?: OrderStatus): Promise<AdminOrderRow[]> {
+export type QuickPeriod = "jour" | "semaine" | "mois";
+
+function quickPeriodStart(period: QuickPeriod, now: Date): Date {
+  if (period === "jour") return startOfDay(now);
+  if (period === "semaine") return startOfWeek(now);
+  return startOfMonth(now);
+}
+
+export async function getOrders(options?: { status?: OrderStatus; period?: QuickPeriod; search?: string }): Promise<AdminOrderRow[]> {
   const supabase = createClient();
   let query = supabase
     .from("orders")
@@ -342,9 +350,10 @@ export async function getOrders(filter?: OrderStatus): Promise<AdminOrderRow[]> 
       "id, order_number, status, total, created_at, profiles(full_name, whatsapp_phone), order_assignments(drivers(name))"
     )
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(options?.search?.trim() ? 500 : 100);
 
-  if (filter) query = query.eq("status", filter);
+  if (options?.status) query = query.eq("status", options.status);
+  if (options?.period) query = query.gte("created_at", quickPeriodStart(options.period, new Date()).toISOString());
 
   const { data } = await query;
   const rows = (data ?? []) as unknown as {
@@ -357,7 +366,7 @@ export async function getOrders(filter?: OrderStatus): Promise<AdminOrderRow[]> 
     order_assignments: { drivers: { name: string } | null }[];
   }[];
 
-  return rows.map((o) => ({
+  let result = rows.map((o) => ({
     id: o.id,
     order_number: o.order_number,
     status: o.status,
@@ -367,6 +376,19 @@ export async function getOrders(filter?: OrderStatus): Promise<AdminOrderRow[]> 
     client_phone: o.profiles?.whatsapp_phone ?? null,
     driver_name: o.order_assignments?.[0]?.drivers?.name ?? null,
   }));
+
+  const term = options?.search?.trim().toLowerCase();
+  if (term) {
+    const digits = term.replace(/\D/g, "");
+    result = result.filter(
+      (o) =>
+        o.order_number.toLowerCase().includes(term) ||
+        (o.client_name?.toLowerCase().includes(term) ?? false) ||
+        (digits.length > 0 && (o.client_phone?.includes(digits) ?? false))
+    );
+  }
+
+  return result;
 }
 
 export async function getOrderDetail(id: string): Promise<OrderDetailData | null> {
@@ -421,22 +443,37 @@ interface ClientProfileRow {
   orders: { total: number }[];
 }
 
-export async function getClients() {
+export async function getClients(options?: { search?: string; period?: QuickPeriod }) {
   const supabase = createClient();
   const { data: profiles } = await supabase
     .from("profiles")
     .select("id, full_name, whatsapp_phone, zone, created_at, orders(total)")
     .order("created_at", { ascending: false });
 
-  const rows = (profiles ?? []) as unknown as ClientProfileRow[];
+  let rows = (profiles ?? []) as unknown as ClientProfileRow[];
 
-  return rows.map((p) => ({
+  if (options?.period) {
+    const startIso = quickPeriodStart(options.period, new Date()).toISOString();
+    rows = rows.filter((p) => p.created_at >= startIso);
+  }
+
+  let result = rows.map((p) => ({
     id: p.id,
     name: p.full_name || p.whatsapp_phone,
     phone: p.whatsapp_phone,
     orderCount: p.orders?.length ?? 0,
     spent: (p.orders ?? []).reduce((s, o) => s + o.total, 0),
   }));
+
+  const term = options?.search?.trim().toLowerCase();
+  if (term) {
+    const digits = term.replace(/\D/g, "");
+    result = result.filter(
+      (c) => c.name.toLowerCase().includes(term) || (digits.length > 0 && c.phone.includes(digits))
+    );
+  }
+
+  return result;
 }
 
 export async function getClientDetail(id: string) {

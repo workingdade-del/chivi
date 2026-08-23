@@ -79,7 +79,7 @@ export function ClientPhoneEditor({ clientId, phone }: { clientId: string; phone
       <input
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Ex : 90000000 ou 229 90000000"
+        placeholder="Ex : 90000000 (Bénin) ou +225 07 12 34 56 78 (international)"
         className="border-2 border-[#e6dcc4] rounded-xl px-3 py-2 text-sm w-full"
         autoFocus
       />

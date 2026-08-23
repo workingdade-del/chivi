@@ -8,6 +8,7 @@ import { ClientNameEditor } from "@/components/admin/ClientNameEditor";
 import { ClientPhoneEditor } from "@/components/admin/ClientPhoneEditor";
 import { ClientAddressEditor } from "@/components/admin/ClientAddressEditor";
 import { ClientNotesEditor } from "@/components/admin/ClientNotesEditor";
+import { ClientMergeButton } from "@/components/admin/ClientMergeButton";
 
 export default async function AdminClientDetailPage({ params }: { params: { id: string } }) {
   const { profile, orders } = await getClientDetail(params.id);
@@ -54,6 +55,20 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
               <div className="font-mega text-lg text-maroon-deep">{formatFcfa(spent)}</div>
               <div className="text-[11px] text-[#9a8b78]">dépensé</div>
             </div>
+          </div>
+          <div className="mt-4.5">
+            <ClientMergeButton
+              current={{
+                id: profile.id,
+                full_name: profile.full_name,
+                whatsapp_phone: profile.whatsapp_phone,
+                notes: profile.notes,
+                usual_address_text: profile.usual_address_text,
+                usual_address_lat: profile.usual_address_lat,
+                usual_address_lng: profile.usual_address_lng,
+                usual_delivery_fee: profile.usual_delivery_fee,
+              }}
+            />
           </div>
         </div>
 
