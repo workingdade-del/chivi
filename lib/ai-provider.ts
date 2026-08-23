@@ -88,7 +88,13 @@ export async function generateAiReply(systemPrompt: string, history: ChatTurn[])
   return model === "claude" ? generateClaudeReply(systemPrompt, history) : generateGroqReply(systemPrompt, history);
 }
 
-const GROQ_MODEL = "llama-3.1-8b-instant";
+// llama-3.1-8b-instant est décommissionné par Groq le 16 août 2026 —
+// openai/gpt-oss-20b est le remplacement officiellement recommandé.
+// Vérifié avant migration : supporte le JSON mode (response_format:
+// "json_object", utilisé par generateGroqJson) et le tool calling
+// (utilisé par answerWithGroq et classifyIntentWithGroq) de la même façon.
+// Voir https://console.groq.com/docs/deprecations.
+const GROQ_MODEL = "openai/gpt-oss-20b";
 
 async function generateGroqJson(prompt: string): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;

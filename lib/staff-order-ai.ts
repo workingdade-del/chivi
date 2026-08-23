@@ -1,6 +1,9 @@
 import Groq from "groq-sdk";
 
-const GROQ_MODEL = "llama-3.1-8b-instant";
+// llama-3.1-8b-instant est décommissionné par Groq le 16 août 2026 — migré
+// vers openai/gpt-oss-20b (remplacement officiellement recommandé,
+// supporte le JSON mode utilisé ci-dessous de la même façon).
+const GROQ_MODEL = "openai/gpt-oss-20b";
 
 export interface ParsedStaffOrderPlat {
   nom: string;

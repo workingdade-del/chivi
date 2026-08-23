@@ -1,13 +1,17 @@
 import Groq from "groq-sdk";
 
-const GROQ_MODEL = "llama-3.1-8b-instant";
+// llama-3.1-8b-instant est décommissionné par Groq le 16 août 2026 —
+// openai/gpt-oss-20b est le remplacement officiellement recommandé
+// (meilleure performance, inférence plus rapide, tool calling + JSON mode
+// équivalents ou supérieurs). Voir https://console.groq.com/docs/deprecations.
+const GROQ_MODEL = "openai/gpt-oss-20b";
 
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
 }
 
-/** Appelle Groq (Llama 3.1 8B Instant) avec un system prompt + l'historique de conversation. Serveur uniquement. */
+/** Appelle Groq (GPT-OSS 20B) avec un system prompt + l'historique de conversation. Serveur uniquement. */
 export async function generateGroqReply(systemPrompt: string, history: ChatTurn[]): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
