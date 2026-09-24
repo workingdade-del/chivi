@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Pencil, ArrowUpDown } from "lucide-react";
+import { Plus, Trash2, Pencil, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
 import type { ExpenseCategory } from "@/lib/supabase/types";
@@ -29,6 +29,21 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Mois courant à Cotonou (UTC+1) au format "YYYY-MM" — même préfixe que expense_date.
+function currentMonth(): string {
+  return new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 7);
+}
+
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return d.toISOString().slice(0, 7);
+}
+
+function monthLabel(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
 const EMPTY_FORM = {
   label: "",
   category: "ingredients" as ExpenseCategory,
@@ -50,6 +65,7 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
   const [busy, setBusy] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | "all">("all");
   const [sortAsc, setSortAsc] = useState(false);
+  const [month, setMonth] = useState(currentMonth);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<ExpenseRow>>({});
 
@@ -130,6 +146,7 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
   }
 
   const filtered = expenses
+    .filter((e) => e.expense_date.slice(0, 7) === month)
     .filter((e) => categoryFilter === "all" || e.category === categoryFilter)
     .sort((a, b) => (sortAsc ? a.expense_date.localeCompare(b.expense_date) : b.expense_date.localeCompare(a.expense_date)));
 
@@ -225,6 +242,28 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
         </button>
       </form>
 
+      <div className={`${panelBg} border rounded-xl px-3 py-2 flex items-center justify-between mb-3`}>
+        <button onClick={() => setMonth((m) => shiftMonth(m, -1))} aria-label="Mois précédent" className={labelColor}>
+          <ChevronLeft size={18} />
+        </button>
+        <div className="text-center">
+          <div className={`font-semibold text-sm capitalize ${isDark ? "text-white" : "text-ink"}`}>{monthLabel(month)}</div>
+          {month !== currentMonth() && (
+            <button onClick={() => setMonth(currentMonth())} className="text-[11px] text-amber underline">
+              Revenir au mois en cours
+            </button>
+          )}
+        </div>
+        <button
+          onClick={() => setMonth((m) => shiftMonth(m, 1))}
+          disabled={month >= currentMonth()}
+          aria-label="Mois suivant"
+          className={`${labelColor} disabled:opacity-30`}
+        >
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <div className="flex items-center gap-2">
           <select
@@ -308,7 +347,7 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
             )}
           </div>
         ))}
-        {filtered.length === 0 && <div className={`text-center text-sm py-8 ${labelColor}`}>Aucune dépense.</div>}
+        {filtered.length === 0 && <div className={`text-center text-sm py-8 ${labelColor}`}>Aucune dépense en {monthLabel(month)}.</div>}
       </div>
     </div>
   );
