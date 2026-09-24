@@ -10,6 +10,17 @@ import type { FinanceAccountDetail, FinanceTransactionRow } from "@/lib/finance"
 
 const SOURCE_LABELS: Record<string, string> = { order: "Commande", expense: "Dépense", manual: "Manuel" };
 
+// Premier et dernier jour du mois en cours à Cotonou (UTC+1), "YYYY-MM-DD".
+function currentMonthRange(): { from: string; to: string } {
+  const now = new Date(Date.now() + 60 * 60 * 1000);
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  return {
+    from: new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10),
+    to: new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10),
+  };
+}
+
 interface AccountOption {
   id: string;
   name: string;
@@ -29,8 +40,8 @@ export function FinanceAccountDetailScreen({
   const [moveTx, setMoveTx] = useState<FinanceTransactionRow | null>(null);
   const [filterType, setFilterType] = useState<"all" | "entree" | "sortie">("all");
   const [filterCategory, setFilterCategory] = useState("all");
-  const [filterFrom, setFilterFrom] = useState("");
-  const [filterTo, setFilterTo] = useState("");
+  const [filterFrom, setFilterFrom] = useState(() => currentMonthRange().from);
+  const [filterTo, setFilterTo] = useState(() => currentMonthRange().to);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -45,6 +56,16 @@ export function FinanceAccountDetailScreen({
     if (filterTo && t.date > filterTo) return false;
     return true;
   });
+
+  // Montant affiché en haut = somme signée des transactions dans la plage de
+  // dates filtrée (pas de filtre type/catégorie) ; le solde all-time réel du
+  // compte (detail.balance) reste inchangé et utilisé ailleurs (Solde net).
+  const periodTotal = detail.transactions.reduce((sum, t) => {
+    if (filterFrom && t.date < filterFrom) return sum;
+    if (filterTo && t.date > filterTo) return sum;
+    return sum + (t.type === "entree" ? t.amount : -t.amount);
+  }, 0);
+  const isCurrentMonth = filterFrom === currentMonthRange().from && filterTo === currentMonthRange().to;
 
   async function handleDelete(tx: FinanceTransactionRow) {
     if (tx.source_type !== "manual") return;
@@ -66,8 +87,12 @@ export function FinanceAccountDetailScreen({
       <div className="bg-white border border-[#ece2cd] rounded-2xl p-5 mb-4 flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="text-xs text-[#9a8b78] uppercase tracking-wide">{detail.account.name}</div>
-          <div className={`font-mega text-3xl mt-1.5 ${detail.balance >= 0 ? "text-maroon-deep" : "text-chilli"}`}>
-            {formatFcfa(detail.balance)}
+          <div className={`font-mega text-3xl mt-1.5 ${periodTotal >= 0 ? "text-maroon-deep" : "text-chilli"}`}>
+            {formatFcfa(periodTotal)}
+          </div>
+          <div className="text-[11px] text-[#9a8b78] mt-1">
+            {isCurrentMonth ? "Mois en cours" : !filterFrom && !filterTo ? "Tout l'historique" : "Période filtrée"}
+            {" · "}solde total du compte : {formatFcfa(detail.balance)}
           </div>
         </div>
         <div className="flex gap-2">
@@ -104,6 +129,25 @@ export function FinanceAccountDetailScreen({
         )}
         <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} className="border-2 border-[#e6dcc4] rounded-xl px-3 py-2 text-[13px]" />
         <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className="border-2 border-[#e6dcc4] rounded-xl px-3 py-2 text-[13px]" />
+        <button
+          onClick={() => {
+            const r = currentMonthRange();
+            setFilterFrom(r.from);
+            setFilterTo(r.to);
+          }}
+          className="px-3 py-2 rounded-xl border-2 border-[#e6dcc4] text-[13px] font-semibold text-[#6d6358]"
+        >
+          Mois en cours
+        </button>
+        <button
+          onClick={() => {
+            setFilterFrom("");
+            setFilterTo("");
+          }}
+          className="px-3 py-2 rounded-xl border-2 border-[#e6dcc4] text-[13px] font-semibold text-[#6d6358]"
+        >
+          Tout l&apos;historique
+        </button>
       </div>
 
       <div className="bg-white border border-[#ece2cd] rounded-2xl overflow-hidden">
