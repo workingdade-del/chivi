@@ -66,3 +66,48 @@ export async function getFinanceAccountDetail(id: string): Promise<FinanceAccoun
 
   return { account: account ?? null, transactions: rows, balance };
 }
+
+export interface FinanceMonthRow {
+  month: string; // "YYYY-MM"
+  revenue: number;
+  expenses: number;
+  net: number;
+  cumulative: number;
+}
+
+/**
+ * Historique mensuel du Solde net (comptes hors "dettes", même périmètre que
+ * le Solde net de la page Finance) : entrées = revenus, sorties = dépenses du
+ * mois, cumul = solde net tel qu'il était à la fin de ce mois. Le cumul du mois
+ * le plus récent égale donc le Solde net global. Aucun calcul existant modifié.
+ */
+export async function getFinanceMonthlyHistory(): Promise<FinanceMonthRow[]> {
+  const supabase = createClient();
+  const [{ data: accounts }, { data: transactions }] = await Promise.all([
+    supabase.from("finance_accounts").select("id, type"),
+    supabase.from("finance_transactions").select("account_id, type, amount, date"),
+  ]);
+
+  const debtIds = new Set((accounts ?? []).filter((a) => a.type === "dettes").map((a) => a.id));
+  const byMonth = new Map<string, { revenue: number; expenses: number }>();
+  for (const t of transactions ?? []) {
+    if (debtIds.has(t.account_id)) continue;
+    const month = String(t.date).slice(0, 7);
+    const entry = byMonth.get(month) ?? { revenue: 0, expenses: 0 };
+    if (t.type === "entree") entry.revenue += t.amount;
+    else entry.expenses += t.amount;
+    byMonth.set(month, entry);
+  }
+
+  let cumulative = 0;
+  const rows = Array.from(byMonth.keys())
+    .sort()
+    .map((month) => {
+      const { revenue, expenses } = byMonth.get(month)!;
+      const net = revenue - expenses;
+      cumulative += net;
+      return { month, revenue, expenses, net, cumulative };
+    });
+
+  return rows.reverse();
+}

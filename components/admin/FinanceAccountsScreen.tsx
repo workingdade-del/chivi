@@ -7,7 +7,7 @@ import { Plus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
 import { showToast } from "@/components/shared/Toast";
-import type { FinanceAccountRow } from "@/lib/finance";
+import type { FinanceAccountRow, FinanceMonthRow } from "@/lib/finance";
 
 const TYPE_LABELS: Record<string, string> = {
   ventes: "Ventes",
@@ -19,10 +19,12 @@ export function FinanceAccountsScreen({
   accounts,
   soldeNet,
   totalDettes,
+  monthly,
 }: {
   accounts: FinanceAccountRow[];
   soldeNet: number;
   totalDettes: number;
+  monthly: FinanceMonthRow[];
 }) {
   const router = useRouter();
   const [showNewAccount, setShowNewAccount] = useState(false);
@@ -40,6 +42,36 @@ export function FinanceAccountsScreen({
           <div className={`font-mega text-3xl mt-2.5 ${totalDettes >= 0 ? "text-ink" : "text-chilli"}`}>{formatFcfa(totalDettes)}</div>
           <div className="text-xs text-[#9a8b78] mt-1.5">Solde du compte Dettes</div>
         </div>
+      </div>
+
+      <div className="bg-white border border-[#ece2cd] rounded-2xl overflow-hidden mb-4">
+        <div className="px-5 py-3.5 font-bold text-[15px] text-ink border-b border-[#efe6d3]">Historique mensuel</div>
+        <div
+          className="grid gap-3 px-5 py-3.5 bg-[#faf4e8] border-b border-[#efe6d3] text-[11px] tracking-wide uppercase text-[#9a8b78] font-semibold"
+          style={{ gridTemplateColumns: "1.2fr 1fr 1fr 1fr 1.2fr" }}
+        >
+          <span>Mois</span>
+          <span>Revenus</span>
+          <span>Dépenses</span>
+          <span>Net du mois</span>
+          <span>Solde cumulé</span>
+        </div>
+        {monthly.map((m) => (
+          <div
+            key={m.month}
+            className="grid gap-3 px-5 py-3.5 border-b border-[#f3ecdd] items-center text-sm last:border-b-0"
+            style={{ gridTemplateColumns: "1.2fr 1fr 1fr 1fr 1.2fr" }}
+          >
+            <span className="font-semibold text-ink capitalize">
+              {new Date(`${m.month}-01T00:00:00Z`).toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" })}
+            </span>
+            <span className="text-status-green-deep">{formatFcfa(m.revenue)}</span>
+            <span className="text-chilli">{formatFcfa(m.expenses)}</span>
+            <span className={`font-mega ${m.net >= 0 ? "text-status-green-deep" : "text-chilli"}`}>{formatFcfa(m.net)}</span>
+            <span className={`font-mega ${m.cumulative >= 0 ? "text-maroon-deep" : "text-chilli"}`}>{formatFcfa(m.cumulative)}</span>
+          </div>
+        ))}
+        {monthly.length === 0 && <div className="px-5 py-8 text-center text-[#9a8b78] text-sm">Aucune transaction.</div>}
       </div>
 
       <div className="flex justify-end mb-4">
