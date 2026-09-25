@@ -757,3 +757,44 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
 }
 
 export { STATUS_LABELS };
+
+export interface TopClientRow {
+  id: string;
+  name: string;
+  total: number;
+  orderCount: number;
+}
+
+/** Top clients par montant dépensé (orders.total des commandes livrées) sur la semaine ou le mois en cours. */
+export async function getTopClients(period: "semaine" | "mois", limit = 5): Promise<TopClientRow[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("orders")
+    .select("profile_id, total, profiles(full_name, whatsapp_phone)")
+    .eq("status", "livree")
+    .not("profile_id", "is", null)
+    .gte("created_at", quickPeriodStart(period, new Date()).toISOString());
+
+  const rows = (data ?? []) as unknown as {
+    profile_id: string;
+    total: number;
+    profiles: { full_name: string | null; whatsapp_phone: string } | null;
+  }[];
+
+  const byClient = new Map<string, TopClientRow>();
+  for (const o of rows) {
+    const entry = byClient.get(o.profile_id) ?? {
+      id: o.profile_id,
+      name: o.profiles?.full_name || o.profiles?.whatsapp_phone || "Client",
+      total: 0,
+      orderCount: 0,
+    };
+    entry.total += o.total;
+    entry.orderCount += 1;
+    byClient.set(o.profile_id, entry);
+  }
+
+  return Array.from(byClient.values())
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit);
+}

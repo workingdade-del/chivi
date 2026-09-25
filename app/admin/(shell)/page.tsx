@@ -1,18 +1,21 @@
+import Link from "next/link";
 import { Package, TrendingUp, Receipt, PiggyBank } from "lucide-react";
-import { getDashboardData, getRevenueChart, type ChartView } from "@/lib/admin";
+import { getDashboardData, getRevenueChart, getTopClients, type ChartView } from "@/lib/admin";
 import { getSystemSettings } from "@/lib/system-settings";
 import { formatFcfa } from "@/lib/format";
 import { PauseControl } from "@/components/admin/PauseControl";
 import { RevenueChartCard } from "@/components/admin/RevenueChartCard";
 
-export default async function AdminDashboardPage({ searchParams }: { searchParams: { chartView?: string; chartOffset?: string } }) {
+export default async function AdminDashboardPage({ searchParams }: { searchParams: { chartView?: string; chartOffset?: string; topPeriod?: string } }) {
   const chartView = (["semaine", "mois", "annee"].includes(searchParams.chartView ?? "") ? searchParams.chartView : "semaine") as ChartView;
+  const topPeriod = (searchParams.topPeriod === "mois" ? "mois" : "semaine") as "semaine" | "mois";
   const chartOffset = Math.max(0, parseInt(searchParams.chartOffset ?? "0", 10) || 0);
 
-  const [data, settings, chart] = await Promise.all([
+  const [data, settings, chart, topClients] = await Promise.all([
     getDashboardData(),
     getSystemSettings(),
     getRevenueChart(chartView, chartOffset),
+    getTopClients(topPeriod),
   ]);
   const inProgressTotal = data.inProgress.recue + data.inProgress.en_preparation_prete + data.inProgress.en_route || 1;
 
@@ -72,6 +75,53 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="bg-white border border-[#ece2cd] rounded-2xl p-5 mt-4">
+        <div className="flex items-center justify-between mb-3.5">
+          <div className="font-bold text-[15px] text-ink">Top clients</div>
+          <div className="flex gap-2">
+            {(["semaine", "mois"] as const).map((p) => {
+              const params = new URLSearchParams();
+              if (searchParams.chartView) params.set("chartView", searchParams.chartView);
+              if (searchParams.chartOffset) params.set("chartOffset", searchParams.chartOffset);
+              params.set("topPeriod", p);
+              return (
+                <Link
+                  key={p}
+                  href={`/admin?${params.toString()}`}
+                  className={`px-3.5 py-1.5 rounded-full text-[12px] font-bold ${
+                    topPeriod === p ? "bg-maroon text-gold" : "bg-white border border-[#e2d6bd] text-[#6d6358] font-semibold"
+                  }`}
+                >
+                  {p === "semaine" ? "Semaine" : "Mois"}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+        {topClients.map((c, i) => (
+          <Link
+            key={c.id}
+            href={`/admin/clients/${c.id}`}
+            className="flex items-center justify-between py-3 border-b border-[#f3ecdd] last:border-b-0 text-sm"
+          >
+            <span className="flex items-center gap-3">
+              <span className="w-6 font-mega text-maroon-deep">{i + 1}</span>
+              <span>
+                <b className="font-semibold text-ink">{c.name}</b>
+                <br />
+                <span className="text-xs text-[#9a8b78]">
+                  {c.orderCount} commande{c.orderCount > 1 ? "s" : ""}
+                </span>
+              </span>
+            </span>
+            <span className="font-mega text-maroon-deep">{formatFcfa(c.total)}</span>
+          </Link>
+        ))}
+        {topClients.length === 0 && (
+          <div className="text-[13px] text-[#9a8b78] py-4 text-center">Aucune commande livrée sur cette période.</div>
+        )}
       </div>
     </div>
   );
