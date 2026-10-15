@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { startOfDay, startOfWeek, startOfMonth } from "@/lib/admin";
-import { loadCostMaps, summarizeMargins, type OrderItemForMargin } from "@/lib/margin";
+import { loadCostMaps, summarizeMargins, prorateLineForDiscount, type OrderItemForMargin } from "@/lib/margin";
 
 /**
  * Requêtes DB réelles utilisées par l'interface de question Admin
@@ -67,11 +67,14 @@ export async function queryMarginSummary(period: QueryPeriod): Promise<MarginSum
   const start = rangeStartFor(period);
   const { data } = await supabase
     .from("order_items")
-    .select("product_id, product_variant_id, quantity, line_total, orders!inner(created_at, status)")
+    .select("product_id, product_variant_id, quantity, line_total, orders!inner(created_at, status, subtotal, discount_amount)")
     .gte("orders.created_at", start.toISOString())
     .neq("orders.status", "annulee");
 
-  const items = (data ?? []) as unknown as OrderItemForMargin[];
+  const items = ((data ?? []) as unknown as (OrderItemForMargin & { orders: { subtotal: number; discount_amount: number } })[]).map((i) => ({
+    ...i,
+    line_total: prorateLineForDiscount(i.line_total, i.orders.subtotal, i.orders.discount_amount),
+  }));
   const costMaps = await loadCostMaps(supabase);
   const summary = summarizeMargins(items, costMaps);
   return { period, margin: summary.knownMargin, coveragePct: summary.coveragePct };

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { STATUS_LABELS } from "@/lib/order-status";
-import { loadCostMaps, summarizeMargins, marginByDish, type NamedOrderItemForMargin, type DishMarginRow } from "@/lib/margin";
+import { loadCostMaps, summarizeMargins, marginByDish, prorateLineForDiscount, prorateItemsForDiscount, type NamedOrderItemForMargin, type DishMarginRow } from "@/lib/margin";
 import type { OrderStatus, PaymentMethod } from "@/lib/supabase/types";
 
 export interface OrderDetailData {
@@ -152,20 +152,21 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const { data: itemsToday, error: itemsTodayErr } = await supabase
     .from("order_items")
-    .select("product_id, product_variant_id, product_name, variant_name, quantity, line_total, orders!inner(created_at, status)")
+    .select("product_id, product_variant_id, product_name, variant_name, quantity, line_total, orders!inner(created_at, status, subtotal, discount_amount)")
     .gte("orders.created_at", today.toISOString())
     .neq("orders.status", "annulee");
   if (itemsTodayErr) console.error("[dashboard] échec lecture order_items du jour :", itemsTodayErr.message);
 
   const dishCounts = new Map<string, number>();
-  const todaysItems = (itemsToday ?? []) as unknown as {
+  const todaysItems = ((itemsToday ?? []) as unknown as {
     product_id: string | null;
     product_variant_id: string | null;
     product_name: string;
     variant_name: string | null;
     quantity: number;
     line_total: number;
-  }[];
+    orders: { subtotal: number; discount_amount: number };
+  }[]).map((i) => ({ ...i, line_total: prorateLineForDiscount(i.line_total, i.orders.subtotal, i.orders.discount_amount) }));
   for (const item of todaysItems) {
     dishCounts.set(item.product_name, (dishCounts.get(item.product_name) ?? 0) + item.quantity);
   }
@@ -342,16 +343,25 @@ function quickPeriodStart(period: QuickPeriod, now: Date): Date {
   return startOfMonth(now);
 }
 
-export async function getOrders(options?: { status?: OrderStatus; period?: QuickPeriod; search?: string }): Promise<AdminOrderRow[]> {
+/** Filtre produit : "p:<product_id>" (plat, toutes variantes) ou "v:<variant_id>" (une variante précise). */
+export async function getOrders(options?: { status?: OrderStatus; period?: QuickPeriod; search?: string; product?: string }): Promise<AdminOrderRow[]> {
   const supabase = createClient();
+  const productFilter = options?.product && /^[pv]:[0-9a-f-]{36}$/i.test(options.product) ? options.product : null;
+  // Jointure !inner sur order_items uniquement quand un produit est filtré :
+  // ne garde que les commandes contenant ce produit (sans longue liste d'ids dans l'URL).
   let query = supabase
     .from("orders")
     .select(
-      "id, order_number, status, total, created_at, profiles(full_name, whatsapp_phone), order_assignments(drivers(name))"
+      `id, order_number, status, total, created_at, profiles(full_name, whatsapp_phone), order_assignments(drivers(name))${
+        productFilter ? ", order_items!inner(product_id, product_variant_id)" : ""
+      }`
     )
     .order("created_at", { ascending: false })
     .limit(options?.search?.trim() ? 500 : 100);
 
+  if (productFilter) {
+    query = query.eq(productFilter.startsWith("p:") ? "order_items.product_id" : "order_items.product_variant_id", productFilter.slice(2));
+  }
   if (options?.status) query = query.eq("status", options.status);
   if (options?.period) query = query.gte("created_at", quickPeriodStart(options.period, new Date()).toISOString());
 
@@ -532,13 +542,39 @@ const DAYPARTS = [
   { label: "18h–24h", start: 18, end: 24 },
 ];
 
-export async function getReport(period: ReportPeriod, customRange?: CustomDateRange): Promise<ReportData> {
+/** "YYYY-MM" du mois courant à Cotonou. */
+export function currentCotonouMonth(): string {
+  return toCotonouWallClock(new Date()).toISOString().slice(0, 7);
+}
+
+/** Premier mois ("YYYY-MM") contenant une commande, ou le mois courant s'il n'y en a pas. */
+export async function getFirstOrderMonth(): Promise<string> {
+  const supabase = createClient();
+  const { data } = await supabase.from("orders").select("created_at").order("created_at", { ascending: true }).limit(1);
+  const first = data?.[0]?.created_at;
+  return first ? toCotonouWallClock(new Date(first)).toISOString().slice(0, 7) : currentCotonouMonth();
+}
+
+function monthBounds(month: string): { start: Date; endExclusive: Date; label: string } {
+  const [y, m] = month.split("-").map(Number);
+  return {
+    start: fromCotonouWallClock(new Date(Date.UTC(y, m - 1, 1))),
+    endExclusive: fromCotonouWallClock(new Date(Date.UTC(y, m, 1))),
+    label: new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" }),
+  };
+}
+
+export async function getReport(period: ReportPeriod, customRange?: CustomDateRange, month?: string): Promise<ReportData> {
   const supabase = createClient();
   const today = startOfDay(new Date());
 
   let rangeStart: Date;
   let rangeEndExclusive: Date | null = null; // null = pas de borne haute (comportement historique, va jusqu'à "maintenant")
-  if (customRange) {
+  if (month) {
+    const b = monthBounds(month);
+    rangeStart = b.start;
+    rangeEndExclusive = b.endExclusive;
+  } else if (customRange) {
     rangeStart = startOfDay(new Date(customRange.start));
     const endDay = startOfDay(new Date(customRange.end));
     rangeEndExclusive = new Date(endDay);
@@ -563,6 +599,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   };
   interface PeriodOrderRow {
     subtotal: number;
+    discount_amount: number;
     created_at: string;
     order_items: PeriodOrderItem[];
   }
@@ -570,17 +607,26 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   let ordersQuery = supabase
     .from("orders")
     .select(
-      "subtotal, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
+      "subtotal, discount_amount, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
     )
     .gte("created_at", rangeStart.toISOString())
     .neq("status", "annulee");
   if (rangeEndExclusive) ordersQuery = ordersQuery.lt("created_at", rangeEndExclusive.toISOString());
   const { data: ordersRaw, error: ordersErr } = await ordersQuery;
   if (ordersErr) console.error("[report] échec lecture orders de la période :", ordersErr.message);
-  const orders = (ordersRaw ?? []) as unknown as PeriodOrderRow[];
+  // Les lignes sont ramenées à leur part nette de réduction (discount_amount)
+  // au prorata — voir prorateLineForDiscount dans lib/margin.ts.
+  const orders = ((ordersRaw ?? []) as unknown as PeriodOrderRow[]).map((o) => ({
+    ...o,
+    order_items: prorateItemsForDiscount(o.order_items, o.subtotal, o.discount_amount),
+  }));
 
-  let expensesQuery = supabase.from("expenses").select("amount, expense_date").gte("expense_date", rangeStart.toISOString().slice(0, 10));
-  if (rangeEndExclusive) expensesQuery = expensesQuery.lt("expense_date", rangeEndExclusive.toISOString().slice(0, 10));
+  // expense_date est une date calendaire : on la borne avec le jour CALENDAIRE
+  // Cotonou (rangeStart est minuit Cotonou = 23h UTC la veille, d'où le décalage
+  // d'un jour qu'aurait donné un simple toISOString().slice(0, 10)).
+  const calendarDay = (d: Date) => toCotonouWallClock(d).toISOString().slice(0, 10);
+  let expensesQuery = supabase.from("expenses").select("amount, expense_date").gte("expense_date", calendarDay(rangeStart));
+  if (rangeEndExclusive) expensesQuery = expensesQuery.lt("expense_date", calendarDay(rangeEndExclusive));
   const { data: expensesRaw, error: expensesErr } = await expensesQuery;
   if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
   const expenses = (expensesRaw ?? []).reduce((s, e) => s + e.amount, 0);
@@ -680,7 +726,25 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     }
   }
 
-  if (customRange) {
+  if (month) {
+    // Découpage hebdomadaire Lundi→Dimanche à l'intérieur du mois (la 1re
+    // semaine peut commencer avant le 1er, seuls les jours du mois comptent).
+    rowHead = "Semaine";
+    label = monthBounds(month).label;
+    const firstMonday = startOfWeek(rangeStart);
+    for (let w = 0; w < 6; w++) {
+      const weekStart = new Date(firstMonday.getTime() + w * 7 * 24 * 60 * 60 * 1000);
+      if (weekStart >= rangeEndExclusive! || weekStart > new Date()) break;
+      const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const weekOrders = orders.filter((o) => {
+        const t = new Date(o.created_at);
+        return t >= weekStart && t < weekEnd;
+      });
+      const weekRevenue = weekOrders.reduce((sum, o) => sum + o.subtotal, 0);
+      const weekCosts = bucketCosts(weekOrders);
+      rows.push({ label: `Semaine ${w + 1}`, orders: weekOrders.length, revenue: weekRevenue, costs: weekCosts, profit: weekRevenue - weekCosts });
+    }
+  } else if (customRange) {
     const spanDays = Math.round((rangeEndExclusive!.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000));
     // customRange.{start,end} sont des "YYYY-MM-DD" — new Date() les parse en
     // minuit UTC ; timeZone: "UTC" explicite ici évite toute ambiguïté avec
@@ -797,4 +861,115 @@ export async function getTopClients(period: "semaine" | "mois", limit = 5): Prom
   return Array.from(byClient.values())
     .sort((a, b) => b.total - a.total)
     .slice(0, limit);
+}
+
+
+export interface ProductFilterOption {
+  productId: string;
+  productName: string;
+  variants: { id: string; name: string }[];
+}
+
+/** Plats + variantes pour le filtre produit de la page Commandes. */
+export async function getProductFilterOptions(): Promise<ProductFilterOption[]> {
+  const supabase = createClient();
+  const [{ data: products }, { data: variants }] = await Promise.all([
+    supabase.from("products").select("id, name").order("name"),
+    supabase.from("product_variants").select("id, product_id, name").order("sort_order"),
+  ]);
+  return (products ?? []).map((p) => ({
+    productId: p.id,
+    productName: p.name,
+    variants: (variants ?? []).filter((v) => v.product_id === p.id).map((v) => ({ id: v.id, name: v.name })),
+  }));
+}
+
+export type ProductSalesView = "semaine" | "mois";
+export type ProductBadge = "phare" | "surveiller" | null;
+
+export interface ProductSalesRow extends DishMarginRow {
+  badge: ProductBadge;
+}
+
+export interface ProductSalesData {
+  view: ProductSalesView;
+  offset: number;
+  rangeLabel: string;
+  canGoNext: boolean;
+  totalQty: number;
+  totalRevenue: number;
+  rows: ProductSalesRow[];
+}
+
+/**
+ * Ventes par produit sur une semaine (Lundi→Dimanche) ou un mois calendaire
+ * Cotonou, navigable via offset (0 = période courante, 1 = précédente...).
+ * Commandes non annulées uniquement ; CA = sous-total hors livraison, net des
+ * réductions (prorata par ligne). Labels : "phare" = top 25 % (min. 1) en
+ * volume ET en marge ; "surveiller" = 25 % (min. 1) les moins vendus ; il faut
+ * au moins 3 produits pour qu'un label ait un sens.
+ */
+export async function getProductSales(view: ProductSalesView, offset: number): Promise<ProductSalesData> {
+  const supabase = createClient();
+  const safeOffset = Math.max(0, offset);
+  const DAY = 24 * 60 * 60 * 1000;
+
+  let start: Date;
+  let end: Date;
+  let rangeLabel: string;
+  if (view === "semaine") {
+    start = new Date(startOfWeek(new Date()).getTime() - safeOffset * 7 * DAY);
+    end = new Date(start.getTime() + 7 * DAY);
+    const last = new Date(end.getTime() - DAY);
+    rangeLabel = `${formatCotonouDate(start, { day: "numeric", month: "short" })} – ${formatCotonouDate(last, { day: "numeric", month: "short" })}`;
+  } else {
+    const wall = toCotonouWallClock(new Date());
+    const y = wall.getUTCFullYear();
+    const m = wall.getUTCMonth() - safeOffset;
+    start = fromCotonouWallClock(new Date(Date.UTC(y, m, 1)));
+    end = fromCotonouWallClock(new Date(Date.UTC(y, m + 1, 1)));
+    rangeLabel = new Date(Date.UTC(y, m, 1)).toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
+  }
+
+  const { data } = await supabase
+    .from("orders")
+    .select("subtotal, discount_amount, order_items(product_id, product_variant_id, product_name, quantity, line_total)")
+    .gte("created_at", start.toISOString())
+    .lt("created_at", end.toISOString())
+    .neq("status", "annulee");
+
+  const orders = (data ?? []) as unknown as {
+    subtotal: number;
+    discount_amount: number;
+    order_items: { product_id: string | null; product_variant_id: string | null; product_name: string; quantity: number; line_total: number }[];
+  }[];
+
+  const items: NamedOrderItemForMargin[] = orders.flatMap((o) =>
+    prorateItemsForDiscount(o.order_items, o.subtotal, o.discount_amount).map((i) => ({ ...i, label: i.product_name }))
+  );
+  const costMaps = await loadCostMaps(supabase);
+  const dishRows = marginByDish(items, costMaps);
+
+  const n = dishRows.length;
+  const k = Math.max(1, Math.floor(n * 0.25));
+  const byQty = [...dishRows].sort((a, b) => b.qty - a.qty);
+  const byMargin = dishRows.filter((r) => r.margin !== null).sort((a, b) => b.margin! - a.margin!);
+  const topQty = new Set(byQty.slice(0, k).map((r) => r.name));
+  const topMargin = new Set(byMargin.slice(0, k).map((r) => r.name));
+  const bottomQty = new Set(byQty.slice(-k).map((r) => r.name));
+
+  const rows: ProductSalesRow[] = dishRows.map((r) => ({
+    ...r,
+    badge: n < 3 ? null : topQty.has(r.name) && topMargin.has(r.name) ? "phare" : bottomQty.has(r.name) ? "surveiller" : null,
+  }));
+
+  return {
+    view,
+    offset: safeOffset,
+    rangeLabel,
+    canGoNext: safeOffset > 0,
+    totalQty: rows.reduce((sum, r) => sum + r.qty, 0),
+    totalRevenue: rows.reduce((sum, r) => sum + r.revenue, 0),
+    rows,
+  };
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getOrders, type QuickPeriod } from "@/lib/admin";
+import { getOrders, getProductFilterOptions, type QuickPeriod } from "@/lib/admin";
 import { STATUS_LABELS, STATUS_COLORS } from "@/lib/order-status";
 import { formatFcfa } from "@/lib/format";
 import { RealtimeRefresh } from "@/components/admin/RealtimeRefresh";
@@ -19,27 +19,31 @@ const PERIODS: { id: QuickPeriod | "all"; label: string }[] = [
   { id: "mois", label: "Ce mois" },
 ];
 
-function buildHref(current: { status: OrderStatus | "all"; period: QuickPeriod | "all"; q: string }, overrides: Partial<typeof current>) {
+function buildHref(current: { status: OrderStatus | "all"; period: QuickPeriod | "all"; q: string; produit: string }, overrides: Partial<typeof current>) {
   const merged = { ...current, ...overrides };
   const params = new URLSearchParams();
   if (merged.status !== "all") params.set("status", merged.status);
   if (merged.period !== "all") params.set("period", merged.period);
   if (merged.q) params.set("q", merged.q);
+  if (merged.produit) params.set("produit", merged.produit);
   const qs = params.toString();
   return `/admin/orders${qs ? `?${qs}` : ""}`;
 }
 
-export default async function AdminOrdersPage({ searchParams }: { searchParams: { status?: string; period?: string; q?: string } }) {
+export default async function AdminOrdersPage({ searchParams }: { searchParams: { status?: string; period?: string; q?: string; produit?: string } }) {
   const activeFilter = (searchParams.status as OrderStatus | "all") || "all";
   const activePeriod = (searchParams.period as QuickPeriod | "all") || "all";
   const search = searchParams.q || "";
-  const current = { status: activeFilter, period: activePeriod, q: search };
+  const produit = searchParams.produit || "";
+  const current = { status: activeFilter, period: activePeriod, q: search, produit };
 
   const orders = await getOrders({
     status: activeFilter === "all" ? undefined : activeFilter,
     period: activePeriod === "all" ? undefined : activePeriod,
     search: search || undefined,
+    product: produit || undefined,
   });
+  const productOptions = await getProductFilterOptions();
 
   return (
     <div>
@@ -48,6 +52,25 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         <form action="/admin/orders" method="GET" className="flex gap-2 flex-1 min-w-[240px]">
           {activeFilter !== "all" && <input type="hidden" name="status" value={activeFilter} />}
           {activePeriod !== "all" && <input type="hidden" name="period" value={activePeriod} />}
+          <select name="produit" defaultValue={produit} className="border-2 border-[#e6dcc4] rounded-xl px-3 py-2 text-[13px] max-w-[200px]">
+            <option value="">Tous les produits</option>
+            {productOptions.map((p) =>
+              p.variants.length === 0 ? (
+                <option key={p.productId} value={`p:${p.productId}`}>
+                  {p.productName}
+                </option>
+              ) : (
+                <optgroup key={p.productId} label={p.productName}>
+                  <option value={`p:${p.productId}`}>{p.productName} (toutes variantes)</option>
+                  {p.variants.map((v) => (
+                    <option key={v.id} value={`v:${v.id}`}>
+                      {p.productName} — {v.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            )}
+          </select>
           <input
             type="text"
             name="q"
@@ -59,9 +82,14 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
             Rechercher
           </button>
         </form>
-        <Link href="/admin/orders/new" className="px-4 py-2 rounded-full text-[13px] font-bold bg-maroon text-gold">
-          + Nouvelle commande
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/admin/orders/products" className="px-4 py-2 rounded-full text-[13px] font-bold bg-white border border-[#e2d6bd] text-[#6d6358]">
+            Ventes par produit
+          </Link>
+          <Link href="/admin/orders/new" className="px-4 py-2 rounded-full text-[13px] font-bold bg-maroon text-gold">
+            + Nouvelle commande
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">

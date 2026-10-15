@@ -55,6 +55,25 @@ export async function loadCostMaps(client?: SupabaseClient<Database>): Promise<C
   return { products, variants };
 }
 
+/**
+ * orders.subtotal est stocké DÉJÀ net de la réduction (voir migration 0047) :
+ * le CA brut de la commande vaut donc subtotal + discount_amount. Chaque ligne
+ * est ramenée à sa part nette au prorata (line_total × subtotal / (subtotal +
+ * discount)), pour que la marge par plat tienne compte des réductions au lieu
+ * de compter le prix catalogue plein.
+ */
+export function prorateLineForDiscount(lineTotal: number, orderSubtotal: number, discountAmount: number): number {
+  if (!discountAmount || discountAmount <= 0) return lineTotal;
+  const gross = orderSubtotal + discountAmount;
+  if (gross <= 0) return lineTotal;
+  return Math.round((lineTotal * orderSubtotal) / gross);
+}
+
+export function prorateItemsForDiscount<T extends { line_total: number }>(items: T[], orderSubtotal: number, discountAmount: number): T[] {
+  if (!discountAmount || discountAmount <= 0) return items;
+  return items.map((i) => ({ ...i, line_total: prorateLineForDiscount(i.line_total, orderSubtotal, discountAmount) }));
+}
+
 export interface ItemMarginResult {
   revenue: number;
   unitCost: number | null; // null = coût non renseigné
@@ -134,6 +153,12 @@ export interface DishMarginRow {
   cost: number | null;
   margin: number | null;
   costKnown: boolean;
+  /** Coût unitaire moyen (cost / qty) ; null si coût non renseigné. */
+  unitCost: number | null;
+  /** % de marge = marge / CA ; null si coût non renseigné (jamais une fausse marge de 100 %). */
+  marginPct: number | null;
+  /** Part du CA total de la liste, en %. */
+  salesSharePct: number;
 }
 
 interface NamedOrderItemForMargin extends OrderItemForMargin {
@@ -155,6 +180,9 @@ export function marginByDish(items: NamedOrderItemForMargin[], costs: CostMaps):
         cost: r.cost,
         margin: r.margin,
         costKnown: r.costKnown,
+        unitCost: null,
+        marginPct: null,
+        salesSharePct: 0,
       });
     } else {
       existing.qty += item.quantity;
@@ -173,7 +201,15 @@ export function marginByDish(items: NamedOrderItemForMargin[], costs: CostMaps):
     }
   }
 
-  return Array.from(byLabel.values()).sort((a, b) => {
+  const rowsList = Array.from(byLabel.values());
+  const totalRevenue = rowsList.reduce((sum, r) => sum + r.revenue, 0);
+  for (const r of rowsList) {
+    r.unitCost = r.costKnown && r.cost !== null && r.qty > 0 ? Math.round(r.cost / r.qty) : null;
+    r.marginPct = r.costKnown && r.margin !== null && r.revenue > 0 ? Math.round((r.margin / r.revenue) * 100) : null;
+    r.salesSharePct = totalRevenue > 0 ? Math.round((r.revenue / totalRevenue) * 1000) / 10 : 0;
+  }
+
+  return rowsList.sort((a, b) => {
     const contribA = a.margin ?? -Infinity;
     const contribB = b.margin ?? -Infinity;
     return contribB - contribA;
