@@ -9,10 +9,13 @@ import { ClientPhoneEditor } from "@/components/admin/ClientPhoneEditor";
 import { ClientAddressEditor } from "@/components/admin/ClientAddressEditor";
 import { ClientNotesEditor } from "@/components/admin/ClientNotesEditor";
 import { ClientMergeButton } from "@/components/admin/ClientMergeButton";
+import { ClientLoyaltyCard } from "@/components/admin/ClientLoyaltyCard";
+import { getClientLoyalty } from "@/lib/loyalty";
 
 export default async function AdminClientDetailPage({ params }: { params: { id: string } }) {
   const { profile, orders } = await getClientDetail(params.id);
   if (!profile) notFound();
+  const loyalty = await getClientLoyalty(profile.id);
 
   const spent = orders.reduce((s, o) => s + o.total, 0);
   const name = profile.full_name || profile.whatsapp_phone;
@@ -81,6 +84,7 @@ export default async function AdminClientDetailPage({ params }: { params: { id: 
           usualDeliveryFee={profile.usual_delivery_fee}
         />
         <ClientNotesEditor clientId={profile.id} notes={profile.notes} />
+        <ClientLoyaltyCard clientId={profile.id} balance={loyalty.balance} transactions={loyalty.transactions} />
         <div className="bg-white border border-[#ece2cd] rounded-2xl p-5">
           <div className="font-bold text-[15px] text-ink mb-3.5">Historique des commandes</div>
           {orders.map((o) => {

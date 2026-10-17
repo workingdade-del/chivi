@@ -55,6 +55,7 @@ export interface Database {
           is_new: boolean;
           is_available: boolean;
           sort_order: number;
+          loyalty_points_per_fcfa: number | null;
           created_at: string;
           updated_at: string;
         },
@@ -181,6 +182,7 @@ export interface Database {
           unit_price: number | null;
           expense_date: string;
           note: string | null;
+          cost_type: "fixe" | "variable" | null;
           created_at: string;
         },
         "label" | "amount"
@@ -239,8 +241,25 @@ export interface Database {
           paused_at: string | null;
           paused_by: string | null;
           ai_model: "groq" | "claude";
+          target_margin_pct: number;
+          break_even_tolerance_pct: number;
+          price_cut_margin_gap_pct: number;
+          price_cut_low_sales_pct: number;
+          loyalty_points_per_fcfa: number;
         },
         "id"
+      >;
+      loyalty_transactions: Table<
+        {
+          id: string;
+          profile_id: string;
+          order_id: string | null;
+          points: number;
+          type: "gain" | "ajustement" | "annulation";
+          note: string | null;
+          created_at: string;
+        },
+        "profile_id" | "points" | "type"
       >;
       inventory_items: Table<
         {

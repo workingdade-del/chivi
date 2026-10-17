@@ -5,6 +5,7 @@ import Image from "next/image";
 import { compressImage } from "@/lib/image-compress";
 import { createClient } from "@/lib/supabase/client";
 import { showToast } from "@/components/shared/Toast";
+import { LoyaltyPricingSettings } from "@/components/admin/LoyaltyPricingSettings";
 
 export function SettingsScreen() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -141,6 +142,8 @@ export function SettingsScreen() {
           </button>
         </div>
       </div>
+
+      <LoyaltyPricingSettings />
     </div>
   );
 }

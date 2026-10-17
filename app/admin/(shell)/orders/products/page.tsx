@@ -82,20 +82,21 @@ export default async function AdminProductSalesPage({
       <div className="bg-white border border-[#ece2cd] rounded-2xl overflow-hidden">
         <div
           className="grid gap-3 px-5 py-3.5 bg-[#faf4e8] border-b border-[#efe6d3] text-[11px] tracking-wide uppercase text-[#9a8b78] font-semibold"
-          style={{ gridTemplateColumns: "1.6fr 70px 1fr 80px 1fr 1fr" }}
+          style={{ gridTemplateColumns: "1.5fr 60px 1fr 70px 1fr 90px 1fr" }}
         >
           <span>Produit</span>
           <span>Qté</span>
           <span>CA</span>
           <span>% ventes</span>
           <span>Marge</span>
+          <span>Points</span>
           <span>Étiquette</span>
         </div>
         {rows.map((r) => (
           <div
             key={r.name}
             className="grid gap-3 px-5 py-3.5 border-b border-[#f3ecdd] items-center text-sm last:border-b-0"
-            style={{ gridTemplateColumns: "1.6fr 70px 1fr 80px 1fr 1fr" }}
+            style={{ gridTemplateColumns: "1.5fr 60px 1fr 70px 1fr 90px 1fr" }}
           >
             <span className="font-semibold text-ink">{r.name}</span>
             <span className="text-[#6d6358]">{r.qty}</span>
@@ -108,6 +109,7 @@ export default async function AdminProductSalesPage({
             ) : (
               <span className="text-[#b0a596] italic">Coût non renseigné</span>
             )}
+            <span className="text-[#6d6358]">{r.points ?? 0}</span>
             <span>
               {r.badge === "phare" && (
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-status-green-bg text-status-green-deep">Produit phare</span>
@@ -122,13 +124,14 @@ export default async function AdminProductSalesPage({
         {rows.length > 0 && (
           <div
             className="grid gap-3 px-5 py-3.5 bg-[#faf4e8] border-t border-[#efe6d3] text-sm font-bold text-ink"
-            style={{ gridTemplateColumns: "1.6fr 70px 1fr 80px 1fr 1fr" }}
+            style={{ gridTemplateColumns: "1.5fr 60px 1fr 70px 1fr 90px 1fr" }}
           >
             <span>Total</span>
             <span>{data.totalQty}</span>
             <span className="font-mega text-maroon-deep">{formatFcfa(data.totalRevenue)}</span>
             <span>100 %</span>
             <span />
+            <span>{rows.reduce((sum, r) => sum + (r.points ?? 0), 0)}</span>
             <span />
           </div>
         )}
@@ -136,7 +139,7 @@ export default async function AdminProductSalesPage({
 
       <div className="text-xs text-[#9a8b78] mt-3 leading-relaxed">
         Commandes non annulées uniquement. CA = sous-total hors livraison, net des réductions. <b>Produit phare</b> : dans le top 25 % (min. 1) en
-        volume ET en marge. <b>À surveiller</b> : parmi les 25 % (min. 1) les moins vendus. Étiquettes affichées à partir de 3 produits.
+        volume ET en marge. <b>À surveiller</b> : parmi les 25 % (min. 1) les moins vendus. Étiquettes affichées à partir de 3 produits. Points : fidélité générés par les commandes livrées de la période.
       </div>
     </div>
   );

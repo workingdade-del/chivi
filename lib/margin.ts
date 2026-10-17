@@ -159,6 +159,8 @@ export interface DishMarginRow {
   marginPct: number | null;
   /** Part du CA total de la liste, en %. */
   salesSharePct: number;
+  /** Points de fidélité générés (commandes livrées) — renseigné par l'appelant, pas par marginByDish. */
+  points?: number;
 }
 
 interface NamedOrderItemForMargin extends OrderItemForMargin {

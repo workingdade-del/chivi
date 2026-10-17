@@ -15,6 +15,18 @@ interface ExpenseRow {
   unit_price: number | null;
   expense_date: string;
   note: string | null;
+  cost_type: CostType | null;
+}
+
+type CostType = "fixe" | "variable";
+type CostTypeFilter = "all" | CostType | "a_classer";
+
+const COST_TYPE_LABELS: Record<CostType, string> = { fixe: "Fixe", variable: "Variable" };
+
+// Suggestion par défaut (modifiable) : personnel / loyer / abonnement → fixe, le reste → variable.
+const FIXED_LABEL_PATTERN = /loyer|abonnement|assurance|salaire|internet|forfait|électricité|electricite|\bcie\b|\bsbee\b|\bsonéb\b|\bsoneb\b/i;
+function suggestCostType(category: ExpenseCategory, label: string): CostType {
+  return category === "personnel" || FIXED_LABEL_PATTERN.test(label) ? "fixe" : "variable";
 }
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
@@ -47,6 +59,7 @@ function monthLabel(month: string): string {
 const EMPTY_FORM = {
   label: "",
   category: "ingredients" as ExpenseCategory,
+  costType: "variable" as CostType,
   quantity: "1",
   unitPrice: "",
   expenseDate: todayIso(),
@@ -66,6 +79,8 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | "all">("all");
   const [sortAsc, setSortAsc] = useState(false);
   const [month, setMonth] = useState(currentMonth);
+  const [costTypeFilter, setCostTypeFilter] = useState<CostTypeFilter>("all");
+  const [costTypeTouched, setCostTypeTouched] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<ExpenseRow>>({});
 
@@ -75,9 +90,18 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
     const supabase = createClient();
     const { data } = await supabase
       .from("expenses")
-      .select("id, label, category, amount, quantity, unit_price, expense_date, note")
+      .select("id, label, category, amount, quantity, unit_price, expense_date, note, cost_type")
       .order("expense_date", { ascending: false });
     if (data) setExpenses(data);
+  }, []);
+
+  // Lien depuis Rapports ("N dépenses à classer") : ?type=a_classer&month=YYYY-MM.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get("type");
+    if (type === "fixe" || type === "variable" || type === "a_classer") setCostTypeFilter(type);
+    const m = params.get("month");
+    if (m && /^\d{4}-(0[1-9]|1[0-2])$/.test(m)) setMonth(m);
   }, []);
 
   useEffect(() => {
@@ -109,8 +133,10 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
       unit_price: unitPrice,
       expense_date: form.expenseDate,
       note: form.note.trim() || null,
+      cost_type: form.costType,
     });
     setBusy(false);
+    setCostTypeTouched(false);
     setForm({ ...EMPTY_FORM, expenseDate: form.expenseDate });
   }
 
@@ -134,6 +160,7 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
         amount: (qty ?? 0) * (unitP ?? 0),
         expense_date: editDraft.expense_date,
         note: editDraft.note?.trim() || null,
+        cost_type: editDraft.cost_type ?? null,
       })
       .eq("id", editingId);
     setEditingId(null);
@@ -148,8 +175,10 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
   const filtered = expenses
     .filter((e) => e.expense_date.slice(0, 7) === month)
     .filter((e) => categoryFilter === "all" || e.category === categoryFilter)
+    .filter((e) => costTypeFilter === "all" || (costTypeFilter === "a_classer" ? !e.cost_type : e.cost_type === costTypeFilter))
     .sort((a, b) => (sortAsc ? a.expense_date.localeCompare(b.expense_date) : b.expense_date.localeCompare(a.expense_date)));
 
+  const unclassifiedCount = expenses.filter((e) => !e.cost_type).length;
   const total_ = filtered.reduce((s, e) => s + e.amount, 0);
 
   const panelBg = isDark ? "bg-[#1d0e0e] border-[#3a1c1c]" : "bg-white border-[#ece2cd]";
@@ -166,7 +195,13 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
           <input
             required
             value={form.label}
-            onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                label: e.target.value,
+                costType: costTypeTouched ? f.costType : suggestCostType(f.category, e.target.value),
+              }))
+            }
             placeholder="Ex : Riz, cartons, essence…"
             className={`w-full border rounded-xl px-3.5 py-3 text-[15px] min-h-[48px] ${inputBg}`}
           />
@@ -175,7 +210,12 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
         <Field label="Catégorie" labelColor={labelColor}>
           <select
             value={form.category}
-            onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as ExpenseCategory }))}
+            onChange={(e) =>
+              setForm((f) => {
+                const category = e.target.value as ExpenseCategory;
+                return { ...f, category, costType: costTypeTouched ? f.costType : suggestCostType(category, f.label) };
+              })
+            }
             className={`w-full border rounded-xl px-3.5 py-3 text-[15px] min-h-[48px] ${inputBg}`}
           >
             {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
@@ -183,6 +223,20 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
                 {label}
               </option>
             ))}
+          </select>
+        </Field>
+
+        <Field label="Type de coût" labelColor={labelColor}>
+          <select
+            value={form.costType}
+            onChange={(e) => {
+              setCostTypeTouched(true);
+              setForm((f) => ({ ...f, costType: e.target.value as CostType }));
+            }}
+            className={`w-full border rounded-xl px-3.5 py-3 text-[15px] min-h-[48px] ${inputBg}`}
+          >
+            <option value="fixe">Fixe (loyer, personnel, abonnement…)</option>
+            <option value="variable">Variable (varie avec les ventes)</option>
           </select>
         </Field>
 
@@ -264,6 +318,15 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
         </button>
       </div>
 
+      {unclassifiedCount > 0 && (
+        <button
+          onClick={() => setCostTypeFilter("a_classer")}
+          className="w-full text-left text-[13px] text-[#a6740a] bg-[#fff6e5] border-l-[3px] border-amber rounded-lg px-3.5 py-2.5 mb-3 leading-snug"
+        >
+          {unclassifiedCount} dépense{unclassifiedCount > 1 ? "s" : ""} à classer (fixe ou variable) — toutes périodes. Appuyez pour les afficher.
+        </button>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <div className="flex items-center gap-2">
           <select
@@ -277,6 +340,16 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
                 {label}
               </option>
             ))}
+          </select>
+          <select
+            value={costTypeFilter}
+            onChange={(e) => setCostTypeFilter(e.target.value as CostTypeFilter)}
+            className={`text-xs border rounded-lg px-2.5 py-1.5 ${inputBg}`}
+          >
+            <option value="all">Tous types</option>
+            <option value="fixe">Fixes</option>
+            <option value="variable">Variables</option>
+            <option value="a_classer">À classer</option>
           </select>
           <button onClick={() => setSortAsc((s) => !s)} className={`flex items-center gap-1 text-xs font-semibold ${labelColor}`}>
             <ArrowUpDown size={13} /> Date {sortAsc ? "croissant" : "décroissant"}
@@ -309,6 +382,15 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
                     className={`border rounded-lg px-2.5 py-1.5 text-sm ${inputBg}`}
                   />
                 </div>
+                <select
+                  value={editDraft.cost_type ?? ""}
+                  onChange={(ev) => setEditDraft((d) => ({ ...d, cost_type: (ev.target.value || null) as CostType | null }))}
+                  className={`border rounded-lg px-2.5 py-1.5 text-sm ${inputBg}`}
+                >
+                  <option value="">À classer</option>
+                  <option value="fixe">Fixe</option>
+                  <option value="variable">Variable</option>
+                </select>
                 <input
                   type="date"
                   value={editDraft.expense_date ?? ""}
@@ -331,6 +413,8 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
                   <div className={`text-xs mt-0.5 ${labelColor}`}>
                     {new Date(e.expense_date).toLocaleDateString("fr-FR")} · {CATEGORY_LABELS[e.category]}
                     {e.quantity && e.unit_price ? ` · ${e.quantity} × ${formatFcfa(e.unit_price)}` : ""}
+                    {" · "}
+                    <span className={e.cost_type ? "" : "text-[#a6740a] font-semibold"}>{e.cost_type ? COST_TYPE_LABELS[e.cost_type] : "À classer"}</span>
                   </div>
                   {e.note && <div className={`text-xs mt-0.5 italic ${labelColor}`}>{e.note}</div>}
                 </div>

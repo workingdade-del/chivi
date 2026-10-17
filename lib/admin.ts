@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { STATUS_LABELS } from "@/lib/order-status";
+import { loadLoyaltyRates, pointsForLine, getLoyaltyBalances } from "@/lib/loyalty";
 import { loadCostMaps, summarizeMargins, marginByDish, prorateLineForDiscount, prorateItemsForDiscount, type NamedOrderItemForMargin, type DishMarginRow } from "@/lib/margin";
 import type { OrderStatus, PaymentMethod } from "@/lib/supabase/types";
 
@@ -455,6 +456,7 @@ interface ClientProfileRow {
 
 export async function getClients(options?: { search?: string; period?: QuickPeriod }) {
   const supabase = createClient();
+  const loyaltyBalances = await getLoyaltyBalances();
   const { data: profiles } = await supabase
     .from("profiles")
     .select("id, full_name, whatsapp_phone, zone, created_at, orders(total)")
@@ -473,6 +475,7 @@ export async function getClients(options?: { search?: string; period?: QuickPeri
     phone: p.whatsapp_phone,
     orderCount: p.orders?.length ?? 0,
     spent: (p.orders ?? []).reduce((s, o) => s + o.total, 0),
+    points: loyaltyBalances.get(p.id) ?? 0,
   }));
 
   const term = options?.search?.trim().toLowerCase();
@@ -534,6 +537,12 @@ export interface ReportData {
   dishMargin: number;
   dishMarginCoveragePct: number;
   dishMarginRows: DishMarginRow[];
+  /** Dépenses marquées "fixe" (hors catégories ingrédients/emballage, déjà couvertes par le coût variable des plats). */
+  fixedCosts: number;
+  /** Dépenses de la période sans type (cost_type NULL) — "à classer". */
+  unclassifiedExpensesCount: number;
+  /** Points de fidélité générés par les commandes livrées de la période. */
+  totalPoints: number;
 }
 
 const DAYPARTS = [
@@ -600,6 +609,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   interface PeriodOrderRow {
     subtotal: number;
     discount_amount: number;
+    status: OrderStatus;
     created_at: string;
     order_items: PeriodOrderItem[];
   }
@@ -607,7 +617,7 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   let ordersQuery = supabase
     .from("orders")
     .select(
-      "subtotal, discount_amount, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
+      "subtotal, discount_amount, status, created_at, order_items(product_id, product_variant_id, product_name, variant_name, quantity, line_total)"
     )
     .gte("created_at", rangeStart.toISOString())
     .neq("status", "annulee");
@@ -625,11 +635,30 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
   // Cotonou (rangeStart est minuit Cotonou = 23h UTC la veille, d'où le décalage
   // d'un jour qu'aurait donné un simple toISOString().slice(0, 10)).
   const calendarDay = (d: Date) => toCotonouWallClock(d).toISOString().slice(0, 10);
-  let expensesQuery = supabase.from("expenses").select("amount, expense_date").gte("expense_date", calendarDay(rangeStart));
-  if (rangeEndExclusive) expensesQuery = expensesQuery.lt("expense_date", calendarDay(rangeEndExclusive));
-  const { data: expensesRaw, error: expensesErr } = await expensesQuery;
-  if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
-  const expenses = (expensesRaw ?? []).reduce((s, e) => s + e.amount, 0);
+  const fromDay = calendarDay(rangeStart);
+  const toDay = rangeEndExclusive ? calendarDay(rangeEndExclusive) : null;
+  type ExpenseLite = { amount: number; category?: string; cost_type?: string | null };
+  async function loadExpenses(cols: string) {
+    let q = supabase.from("expenses").select(cols).gte("expense_date", fromDay);
+    if (toDay) q = q.lt("expense_date", toDay);
+    return q;
+  }
+  // Avec cost_type (migration 0048) ; repli sans si la colonne n'existe pas encore.
+  let { data: expensesRaw, error: expensesErr } = await loadExpenses("amount, category, cost_type");
+  if (expensesErr) {
+    console.error("[report] échec lecture expenses (cost_type) :", expensesErr.message);
+    ({ data: expensesRaw, error: expensesErr } = await loadExpenses("amount"));
+    if (expensesErr) console.error("[report] échec lecture expenses de la période :", expensesErr.message);
+  }
+  const expenseRows = (expensesRaw ?? []) as unknown as ExpenseLite[];
+  const expenses = expenseRows.reduce((s, e) => s + e.amount, 0);
+  // Coûts fixes = dépenses marquées "fixe", hors ingrédients/emballage : ces
+  // achats sont déjà dans le coût variable des plats (lib/margin.ts), les
+  // recompter ici serait un double comptage.
+  const fixedCosts = expenseRows
+    .filter((e) => e.cost_type === "fixe" && e.category !== "ingredients" && e.category !== "emballage")
+    .reduce((s, e) => s + e.amount, 0);
+  const unclassifiedExpensesCount = expenseRows.filter((e) => e.category !== undefined && !e.cost_type).length;
 
   // Sous-total hors livraison : les frais de livraison sont perçus au nom du
   // prestataire livreur externe, jamais un revenu/coût/bénéfice CHIVI.
@@ -642,7 +671,17 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     ...item,
     label: item.variant_name ? `${item.product_name} — ${item.variant_name}` : item.product_name,
   }));
-  const dishMarginRows = marginByDish(namedItems, costMaps);
+  const loyaltyRates = await loadLoyaltyRates(supabase);
+  const pointsByLabel = new Map<string, number>();
+  for (const o of orders) {
+    if (o.status !== "livree") continue;
+    for (const item of o.order_items) {
+      const label = item.variant_name ? `${item.product_name} — ${item.variant_name}` : item.product_name;
+      pointsByLabel.set(label, (pointsByLabel.get(label) ?? 0) + pointsForLine(item, loyaltyRates));
+    }
+  }
+  const dishMarginRows = marginByDish(namedItems, costMaps).map((r) => ({ ...r, points: Math.floor(pointsByLabel.get(r.name) ?? 0) }));
+  const totalPoints = dishMarginRows.reduce((sum, r) => sum + (r.points ?? 0), 0);
 
   // "Coûts (denrées)" = coût ingrédients/emballage réel des plats vendus
   // (product_costs / product_variants, même logique que "Marge par plat"
@@ -817,6 +856,9 @@ export async function getReport(period: ReportPeriod, customRange?: CustomDateRa
     dishMargin: dishMarginSummary.knownMargin,
     dishMarginCoveragePct: dishMarginSummary.coveragePct,
     dishMarginRows,
+    fixedCosts,
+    unclassifiedExpensesCount,
+    totalPoints,
   };
 }
 
@@ -933,7 +975,7 @@ export async function getProductSales(view: ProductSalesView, offset: number): P
 
   const { data } = await supabase
     .from("orders")
-    .select("subtotal, discount_amount, order_items(product_id, product_variant_id, product_name, quantity, line_total)")
+    .select("subtotal, discount_amount, status, order_items(product_id, product_variant_id, product_name, quantity, line_total)")
     .gte("created_at", start.toISOString())
     .lt("created_at", end.toISOString())
     .neq("status", "annulee");
@@ -941,6 +983,7 @@ export async function getProductSales(view: ProductSalesView, offset: number): P
   const orders = (data ?? []) as unknown as {
     subtotal: number;
     discount_amount: number;
+    status: OrderStatus;
     order_items: { product_id: string | null; product_variant_id: string | null; product_name: string; quantity: number; line_total: number }[];
   }[];
 
@@ -948,7 +991,15 @@ export async function getProductSales(view: ProductSalesView, offset: number): P
     prorateItemsForDiscount(o.order_items, o.subtotal, o.discount_amount).map((i) => ({ ...i, label: i.product_name }))
   );
   const costMaps = await loadCostMaps(supabase);
-  const dishRows = marginByDish(items, costMaps);
+  const loyaltyRates = await loadLoyaltyRates(supabase);
+  const pointsByName = new Map<string, number>();
+  for (const o of orders) {
+    if (o.status !== "livree") continue;
+    for (const i of prorateItemsForDiscount(o.order_items, o.subtotal, o.discount_amount)) {
+      pointsByName.set(i.product_name, (pointsByName.get(i.product_name) ?? 0) + pointsForLine(i, loyaltyRates));
+    }
+  }
+  const dishRows = marginByDish(items, costMaps).map((r) => ({ ...r, points: Math.floor(pointsByName.get(r.name) ?? 0) }));
 
   const n = dishRows.length;
   const k = Math.max(1, Math.floor(n * 0.25));

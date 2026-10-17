@@ -77,6 +77,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Échec de la réassignation des messages : ${messagesError.message}` }, { status: 500 });
   }
 
+  // Les points de fidélité suivent le profil conservé (sinon supprimés en cascade avec le doublon).
+  const { error: loyaltyError } = await supabase
+    .from("loyalty_transactions")
+    .update({ profile_id: body.keepId })
+    .eq("profile_id", body.mergeId);
+  // 42P01 / PGRST205 = table absente (migration 0049 pas encore appliquée) : rien à réassigner.
+  if (loyaltyError && loyaltyError.code !== "42P01" && loyaltyError.code !== "PGRST205") {
+    return NextResponse.json({ error: `Échec de la réassignation des points : ${loyaltyError.message}` }, { status: 500 });
+  }
+
   const { error: deleteError } = await supabase.from("profiles").delete().eq("id", body.mergeId);
   if (deleteError) {
     return NextResponse.json({ error: `Échec de la suppression du doublon : ${deleteError.message}` }, { status: 500 });
