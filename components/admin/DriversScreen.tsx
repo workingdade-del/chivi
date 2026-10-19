@@ -7,6 +7,7 @@ import { Plus, Send, Pencil, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { showToast } from "@/components/shared/Toast";
 import { compressImage } from "@/lib/image-compress";
+import { Button } from "@/components/shared/Button";
 
 interface Driver {
   id: string;
@@ -249,12 +250,11 @@ export function DriversScreen({ initialDrivers }: { initialDrivers: Driver[] }) 
               >
                 <Pencil size={13} />
               </button>
-              <button
+              <Button
                 onClick={() => handleRemove(d.id)}
-                className="flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl bg-[rgba(231,50,35,.1)] text-chilli"
-              >
+                className="flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl bg-[rgba(231,50,35,.1)] text-chilli" pendingLabel={null}>
                 <Trash2 size={13} />
-              </button>
+              </Button>
             </div>
           </div>
         ))}

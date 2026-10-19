@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Download, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
+import { Button } from "@/components/shared/Button";
 
 interface InventoryRow {
   id: string;
@@ -152,9 +153,9 @@ export function StocksScreen() {
                       {item.name}
                       {low && <AlertTriangle size={13} className="text-chilli" />}
                     </div>
-                    <button onClick={() => handleDelete(item.id)} className="text-chilli">
+                    <Button onClick={() => handleDelete(item.id)} className="text-chilli" pendingLabel={null}>
                       <Trash2 size={15} />
-                    </button>
+                    </Button>
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     <label className="text-[11px] text-[#9a8b78]">
@@ -185,13 +186,13 @@ export function StocksScreen() {
                       />
                     </label>
                     <div className="flex items-end">
-                      <button
+                      <Button
                         onClick={() => handleSave(item)}
                         disabled={!dirty}
                         className="w-full py-1.5 rounded-lg bg-maroon text-gold font-bold text-xs disabled:opacity-40"
                       >
                         Enregistrer
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>

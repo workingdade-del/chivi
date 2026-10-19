@@ -7,6 +7,7 @@ import { compressImage } from "@/lib/image-compress";
 import { useStaffNotificationsStore, isConversationUnread } from "@/lib/store/staff-notifications";
 import { avatarColorFor } from "@/lib/avatar-color";
 import { showToast } from "@/components/shared/Toast";
+import { Button } from "@/components/shared/Button";
 
 interface ConversationSummary {
   normalized_phone: string;
@@ -441,14 +442,14 @@ export function ConversationsScreen() {
                     {selected.ai_active ? <Bot size={13} /> : <UserRound size={13} />}
                     {selected.ai_active ? "IA active" : "Manuel"}
                   </span>
-                  <button
+                  <Button
                     onClick={toggleAI}
                     className={`text-xs font-bold px-3.5 py-2 rounded-xl ${
                       selected.ai_active ? "bg-amber text-maroon-deep" : "bg-maroon text-gold"
                     }`}
                   >
                     {selected.ai_active ? "Prendre la main" : "Rendre à l'IA"}
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>

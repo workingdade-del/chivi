@@ -7,6 +7,7 @@ import { formatFcfa } from "@/lib/format";
 import { getMenuImageUrl } from "@/lib/menu-image";
 import { MenuImage } from "@/components/client/MenuImage";
 import { ProductEditor, type EditorCategory } from "@/components/shared/ProductEditor";
+import { Button } from "@/components/shared/Button";
 
 interface ProductRow {
   id: string;
@@ -157,12 +158,12 @@ export function MenuManagementScreen({
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
             onClick={handleAddCategory}
             className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl border border-[#ece2cd] text-maroon-deep"
           >
             <Plus size={14} /> Nouvelle catégorie
-          </button>
+          </Button>
           <button
             onClick={() => handleAddProduct(productCategories[0]?.slug ?? "")}
             disabled={productCategories.length === 0}

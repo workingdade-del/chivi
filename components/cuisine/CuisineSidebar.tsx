@@ -6,6 +6,7 @@ import { ClipboardList, Receipt, Boxes, Calculator, MessagesSquare } from "lucid
 import { createClient } from "@/lib/supabase/client";
 import { CUISINE_NAV } from "@/lib/cuisine-nav";
 import { useUnreadConversations } from "@/lib/hooks/useUnreadConversations";
+import { Button } from "@/components/shared/Button";
 
 const ICONS = { ClipboardList, Receipt, Boxes, Calculator, MessagesSquare };
 
@@ -58,7 +59,7 @@ export function CuisineSidebar() {
         );
       })}
 
-      <button
+      <Button
         onClick={handleLogout}
         className="mt-auto bg-white/[.06] rounded-2xl px-3.5 py-3 flex items-center gap-2.5 text-left"
       >
@@ -69,7 +70,7 @@ export function CuisineSidebar() {
           <div className="text-white font-bold text-[13px] truncate">Équipe cuisine</div>
           <div className="text-[#a07d6d] text-[11px]">Se déconnecter</div>
         </div>
-      </button>
+      </Button>
     </div>
   );
 }

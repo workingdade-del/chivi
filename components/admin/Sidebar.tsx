@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, ClipboardList, MessagesSquare, Bike, UtensilsCrossed, BarChart3, Users, Boxes, Receipt, Megaphone, Settings, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useUnreadConversations } from "@/lib/hooks/useUnreadConversations";
+import { Button } from "@/components/shared/Button";
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutGrid, match: (p: string) => p === "/admin" },
@@ -100,7 +101,7 @@ export function Sidebar() {
         );
       })}
 
-      <button
+      <Button
         onClick={handleLogout}
         className="mt-auto bg-black/[.18] rounded-2xl px-3.5 py-3 flex items-center gap-2.5 text-left"
       >
@@ -111,7 +112,7 @@ export function Sidebar() {
           <div className="text-white font-bold text-[13px] truncate">{email || "Équipe CHIVI"}</div>
           <div className="text-gold text-[11px]">Se déconnecter</div>
         </div>
-      </button>
+      </Button>
     </div>
   );
 }

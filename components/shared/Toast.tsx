@@ -47,7 +47,7 @@ export function ToastHost() {
       {items.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold text-white ${
+          className={`pointer-events-none flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold text-white ${
             t.kind === "success" ? "bg-status-green-deep" : "bg-chilli"
           }`}
         >

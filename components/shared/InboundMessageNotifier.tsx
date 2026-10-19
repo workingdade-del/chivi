@@ -146,9 +146,9 @@ export function InboundMessageNotifier() {
         </div>
       )}
 
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-[320px]">
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 w-[320px] pointer-events-none">
         {toasts.map((t) => (
-          <div key={t.id} className="bg-white border border-[#ece2cd] shadow-lg rounded-2xl px-4 py-3 flex items-start gap-2.5">
+          <div key={t.id} className="pointer-events-auto bg-white border border-[#ece2cd] shadow-lg rounded-2xl px-4 py-3 flex items-start gap-2.5">
             <MessageCircle size={18} className="flex-none text-maroon mt-0.5" />
             <div className="min-w-0">
               <div className="font-bold text-[13px] text-ink truncate">{t.name}</div>

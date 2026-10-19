@@ -104,11 +104,16 @@ export function CuisineBoard() {
     setAdvancingId(id);
     const supabase = createClient();
     const { error } = await supabase.from("orders").update({ status: NEXT_STATUS[status] }).eq("id", id);
-    setAdvancingId(null);
     if (error) {
+      setAdvancingId(null);
       showToast(`Échec : ${error.message}`, "error");
       return;
     }
+    // Mise à jour optimiste : sans ça, le bouton retrouvait son ancien libellé
+    // jusqu'au prochain refetch Realtime et le clic semblait perdu (re-clics).
+    const next = NEXT_STATUS[status];
+    setTickets((prev) => prev.flatMap((t) => (t.id !== id ? [t] : next === "en_route" || next === "livree" || next === "annulee" ? [] : [{ ...t, status: next }])));
+    setAdvancingId(null);
     if (openId === id && NEXT_STATUS[status] !== "prete") setOpenId(null);
   }
 

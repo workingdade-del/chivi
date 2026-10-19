@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2, Pencil, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
+import { Button } from "@/components/shared/Button";
 import type { ExpenseCategory } from "@/lib/supabase/types";
 
 interface ExpenseRow {
@@ -398,9 +399,9 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
                   className={`border rounded-lg px-2.5 py-1.5 text-sm ${inputBg}`}
                 />
                 <div className="flex gap-2">
-                  <button onClick={saveEdit} className="flex-1 bg-amber text-maroon-deep font-bold text-xs rounded-lg py-2">
+                  <Button onClick={saveEdit} className="flex-1 bg-amber text-maroon-deep font-bold text-xs rounded-lg py-2">
                     Enregistrer
-                  </button>
+                  </Button>
                   <button onClick={() => setEditingId(null)} className={`flex-1 border rounded-lg py-2 text-xs ${labelColor}`}>
                     Annuler
                   </button>
@@ -418,14 +419,14 @@ export function ExpensesManager({ theme = "dark" }: { theme?: "light" | "dark" }
                   </div>
                   {e.note && <div className={`text-xs mt-0.5 italic ${labelColor}`}>{e.note}</div>}
                 </div>
-                <div className="flex items-center gap-2 flex-none">
+                <div className="flex items-center gap-4 flex-none">
                   <div className="font-mega text-amber">{formatFcfa(e.amount)}</div>
                   <button onClick={() => startEdit(e)} aria-label="Modifier">
                     <Pencil size={14} className={labelColor} />
                   </button>
-                  <button onClick={() => handleDelete(e.id)} aria-label="Supprimer">
+                  <Button onClick={() => handleDelete(e.id)} aria-label="Supprimer" pendingLabel={null}>
                     <Trash2 size={14} className="text-red-500" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

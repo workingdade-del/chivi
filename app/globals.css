@@ -41,3 +41,134 @@ body {
 .page-transition {
   animation: chiviFadeIn 0.22s ease-out both;
 }
+
+/* ------------------------------------------------------------
+   Feedback visuel uniforme des boutons (Admin, Cuisine, Client).
+   Centralisé ici : s'applique à TOUS les <button> et aux pills-liens
+   (a.rounded-full), sans toucher bouton par bouton. Les couleurs de
+   chaque bouton restent celles du design system CHIVI : on module
+   seulement la luminosité (filter) et l'échelle, donc ça marche sur
+   n'importe quel fond (rouge, jaune, marron, blanc).
+   ------------------------------------------------------------ */
+button,
+[role="button"],
+a.rounded-full {
+  /* Supprime le délai tactile / zoom double-tap sur mobile et tablette. */
+  touch-action: manipulation;
+  transition:
+    filter 150ms ease,
+    scale 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
+}
+
+button,
+a.rounded-full {
+  cursor: pointer;
+}
+
+/* Survol : uniquement sur appareils avec vrai survol (pas de "hover collant" au tactile). */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):not([aria-busy="true"]):hover,
+  a.rounded-full:hover {
+    filter: brightness(0.94);
+  }
+}
+
+/* Clic : léger enfoncement + teinte plus foncée. */
+button:not(:disabled):not([aria-busy="true"]):active,
+a.rounded-full:active {
+  scale: 0.97;
+  filter: brightness(0.88);
+}
+
+/* Focus clavier visible. */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--chivi-amber, #ffb600);
+  outline-offset: 2px;
+}
+
+/* Désactivé. */
+button:disabled,
+button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* En cours d'action : bouton inerte + spinner (voir components/shared/Button.tsx). */
+button[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.8;
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.45em;
+  vertical-align: -0.15em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: chiviSpin 0.7s linear infinite;
+}
+
+@keyframes chiviSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Zones tactiles >= 44 px (écrans tactiles uniquement). */
+@media (pointer: coarse) {
+  /* Boutons d'action (arrondis) sans hauteur explicite : minimum 44 px. */
+  button[class*="rounded"]:not([class*="h-"]):not([class*="size-"]),
+  a.rounded-full {
+    min-height: 44px;
+  }
+  a.rounded-full {
+    display: inline-flex;
+    align-items: center;
+  }
+  /* Boutons-icônes et liens-texte soulignés : zone de clic étendue sans changer la mise en page. */
+  button:has(> svg:only-child),
+  button.underline {
+    position: relative;
+  }
+  button:has(> svg:only-child)::after,
+  button.underline::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
+}
+
+/* Respect de prefers-reduced-motion : aucune animation. */
+@media (prefers-reduced-motion: reduce) {
+  button,
+  [role="button"],
+  a.rounded-full {
+    transition: none;
+  }
+  button:not(:disabled):active,
+  a.rounded-full:active {
+    scale: 1;
+  }
+  .btn-spinner {
+    animation: none;
+    border: 0;
+    width: auto;
+    height: auto;
+  }
+  .btn-spinner::before {
+    content: "…";
+  }
+  .page-transition {
+    animation: none;
+  }
+}

@@ -8,6 +8,7 @@ import { getMenuImageUrl } from "@/lib/menu-image";
 import { formatFcfa } from "@/lib/format";
 import { MenuImage } from "@/components/client/MenuImage";
 import { showToast } from "@/components/shared/Toast";
+import { Button } from "@/components/shared/Button";
 
 export interface EditorCategory {
   id: string;
@@ -380,16 +381,16 @@ export function ProductEditor({
                   <div key={img.id} className="relative w-16 h-16 rounded-lg overflow-hidden bg-black/10 group">
                     <MenuImage src={getMenuImageUrl(img.image_path)} alt="" />
                     {scope === "full" && (
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1 transition-opacity">
-                        <button onClick={() => handleGalleryMove(i, -1)} className="text-white" aria-label="Monter">
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
+                        <Button onClick={() => handleGalleryMove(i, -1)} className="text-white" aria-label="Monter" pendingLabel={null}>
                           <ChevronUp size={14} />
-                        </button>
-                        <button onClick={() => handleGalleryRemove(img.id)} className="text-white" aria-label="Supprimer">
+                        </Button>
+                        <Button onClick={() => handleGalleryRemove(img.id)} className="text-white" aria-label="Supprimer" pendingLabel={null}>
                           <Trash2 size={14} />
-                        </button>
-                        <button onClick={() => handleGalleryMove(i, 1)} className="text-white" aria-label="Descendre">
+                        </Button>
+                        <Button onClick={() => handleGalleryMove(i, 1)} className="text-white" aria-label="Descendre" pendingLabel={null}>
                           <ChevronDown size={14} />
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -575,9 +576,9 @@ export function ProductEditor({
                             value={v.price}
                             onChange={(e) => handleUpdateVariant(v.id, { price: Math.round(parseFloat(e.target.value) || 0) })}
                           />
-                          <button onClick={() => handleDeleteVariant(v.id)} aria-label="Supprimer la variante">
+                          <Button onClick={() => handleDeleteVariant(v.id)} aria-label="Supprimer la variante" pendingLabel={null}>
                             <Trash2 size={16} className="text-red-500" />
-                          </button>
+                          </Button>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex-1 flex items-center gap-1.5">
@@ -605,9 +606,9 @@ export function ProductEditor({
                       </div>
                     );
                   })}
-                  <button onClick={handleAddVariant} className={`flex items-center gap-1 text-xs font-semibold ${labelColor}`}>
+                  <Button onClick={handleAddVariant} className={`flex items-center gap-1 text-xs font-semibold ${labelColor}`}>
                     <Plus size={14} /> Ajouter une variante
-                  </button>
+                  </Button>
                 </div>
               </Field>
             )}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatFcfa } from "@/lib/format";
+import { Button } from "@/components/shared/Button";
 
 interface InventoryRow {
   id: string;
@@ -187,13 +188,13 @@ export function InventoryScreen() {
                   onChange={(e) => setQuantityDrafts((d) => ({ ...d, [item.id]: e.target.value }))}
                   className="flex-1 bg-[#2a1414] border border-[#4a2020] rounded-xl px-3 py-2.5 text-sm text-white min-h-[44px]"
                 />
-                <button
+                <Button
                   onClick={() => handleQuantityUpdate(item.id)}
                   disabled={draft === undefined || draft === ""}
                   className="px-4 min-h-[44px] rounded-xl bg-white/10 text-cream font-bold text-sm disabled:opacity-40"
                 >
                   Mettre à jour
-                </button>
+                </Button>
               </div>
             </div>
           );

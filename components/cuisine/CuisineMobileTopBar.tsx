@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/shared/Button";
 
 export function CuisineMobileTopBar() {
   const router = useRouter();
@@ -20,13 +21,13 @@ export function CuisineMobileTopBar() {
         className="w-[80px] h-6 bg-left bg-contain bg-no-repeat"
         style={{ backgroundImage: "url('/brand_kit/assets/logo/chivi-wordmark-gold.png')" }}
       />
-      <button
+      <Button
         onClick={handleLogout}
         className="flex items-center gap-1.5 text-[#a07d6d] text-xs font-semibold min-h-[36px] px-2"
       >
         <LogOut size={15} />
         Déconnexion
-      </button>
+      </Button>
     </div>
   );
 }
